@@ -3,10 +3,17 @@
 // pore space from the left by invasion percolation. Each step takes the widest
 // available throat, so the front pauses at narrow throats and jumps through pore
 // bodies, the way drainage looks in a micromodel. Runs once on load; click replays.
-interface Props { height?: number; seed?: number }
-const { height = 72, seed = 11 } = Astro.props;
+interface Props { height?: number; seed?: number; caption?: string }
+const {
+  height = 88,
+  seed = 11,
+  caption = 'Drainage: a non-wetting fluid enters from the left and invades the pore space one throat at a time, simulated by invasion percolation. Click to replay.',
+} = Astro.props;
 ---
-<canvas class="core" data-seed={seed} style={`height:${height}px`} aria-label="Simulation of fluid invading the pore space of a porous medium" title="Click to replay"></canvas>
+<figure class="core-figure">
+  <canvas class="core" data-seed={seed} style={`height:${height}px`} aria-label="Simulation of fluid invading the pore space of a porous medium" title="Click to replay"></canvas>
+  <figcaption><span class="key"><i class="sw grain"></i>grains</span><span class="key"><i class="sw fluid"></i>invading fluid</span>{caption}</figcaption>
+</figure>
 
 <script>
   type Grain = { x: number; y: number; r: number };
@@ -83,7 +90,8 @@ const { height = 72, seed = 11 } = Astro.props;
         if (ok) { const g = { x, y, r }; grains.push(g); buckets[b].push(g); n++; }
       }
 
-      // Pore radius field: distance from each pore cell to the nearest grain surface.
+      // Signed distance to the nearest grain surface: positive in pores, negative inside grains.
+      const INLET = 7 * SCALE; // open reservoir along the left face
       const state = new Uint8Array(W * H); // 0 pore, 1 grain, 2 invaded
       const rad = new Float32Array(W * H);
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -93,13 +101,17 @@ const { height = 72, seed = 11 } = Astro.props;
           for (const g of buckets[k]) { const e = Math.hypot(g.x - x, g.y - y) - g.r; if (e < d) d = e; }
         }
         const i = y * W + x;
-        if (d <= 0) state[i] = 1; else rad[i] = d;
+        if (x < INLET) d = Math.max(d, INLET - x + 1); // carve the reservoir
+        rad[i] = d;
+        if (d <= 0) state[i] = 1;
       }
 
       // Invasion percolation from the left face, widest throat first.
       const heap = new Heap();
       const queued = new Uint8Array(W * H);
       for (let y = 0; y < H; y++) { const i = y * W; if (!state[i]) { heap.push(rad[i], i); queued[i] = 1; } }
+      for (let y = 0; y < H; y++) for (let x = 0; x < INLET; x++) { const i = y * W + x; if (!state[i]) { queued[i] = 1; state[i] = 2; } }
+      for (let y = 0; y < H; y++) { const i = y * W + INLET - 1; const nb = [i + 1, i - W, i + W]; for (const j of nb) if (j >= 0 && j < W * H && !state[j] && !queued[j]) { queued[j] = 1; heap.push(rad[j], j); } }
       let pressure = 0; // 1 / entry radius; rises while the front is stuck
       let breakthrough = false, tail = 0;
 
@@ -116,8 +128,8 @@ const { height = 72, seed = 11 } = Astro.props;
         if (breakthrough) { if (tail++ < 24) { let n = 0; while (heap.size && 1 / heap.peek() <= pressure && n++ < 40) invade(heap.pop()); return true; } return false; }
         if (!heap.size) return false;
         let n = 0;
-        while (heap.size && 1 / heap.peek() <= pressure && n < 450) { invade(heap.pop()); n++; }
-        if (n === 0) pressure += Math.max(0.0022, (1 / heap.peek() - pressure) * 0.08); // stuck: build pressure, pause bounded
+        while (heap.size && 1 / heap.peek() <= pressure && n < 190) { invade(heap.pop()); n++; }
+        if (n === 0) pressure += Math.max(0.0025, (1 / heap.peek() - pressure) * 0.1); // stuck: build pressure, pause bounded
         return true;
       }
 
@@ -133,7 +145,11 @@ const { height = 72, seed = 11 } = Astro.props;
         for (let i = 0, p = 0; i < W * H; i++, p += 4) {
           const s = state[i];
           let c = s === 1 ? grain : s === 2 ? phase : paper;
-          if (s === 2) {
+          if (s === 1) {
+            const t = Math.min(-rad[i] / 7, 1); // 0 at the edge, 1 inside
+            const k = 0.86 + 0.14 * t;
+            d[p] = c[0] * k; d[p + 1] = c[1] * k; d[p + 2] = c[2] * k;
+          } else if (s === 2) {
             const x = i % W;
             const rim = (x > 0 && state[i - 1] === 0) || (x < W - 1 && state[i + 1] === 0) || (i >= W && state[i - W] === 0) || (i + W < W * H && state[i + W] === 0);
             const t = rim ? 0.45 : Math.min(rad[i] / 12, 1) * 0.12; // bright meniscus, faint depth shading
@@ -165,5 +181,18 @@ const { height = 72, seed = 11 } = Astro.props;
 </script>
 
 <style>
-  .core { display: block; width: 100%; border-radius: 3px; cursor: pointer; image-rendering: auto; }
+  .core-figure { margin: 0; }
+  .core { display: block; width: 100%; border-radius: 4px; cursor: pointer; image-rendering: auto; }
+  figcaption {
+    margin-top: 10px;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--slate);
+    text-wrap: pretty;
+  }
+  .key { white-space: nowrap; margin-right: 14px; }
+  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -0.5px; }
+  .sw.grain { background: rgb(var(--grain-rgb)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 15%, transparent); }
+  .sw.fluid { background: rgb(var(--phase-rgb)); }
 </style>
