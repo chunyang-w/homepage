@@ -19,13 +19,10 @@ const DW = 380, DH = 200, xIn = 120, xOut = 336;
 const spread = (n: number, top: number, bottom: number) => Array.from({ length: n }, (_, i) => top + ((bottom - top) * (i + 0.5)) / n);
 const yIn = spread(FEATURES.length, 6, DH - 6), yOut = DH / 2;
 
-// Chart geometry, shared by the loss and overlap charts.
-const CW = 320, PL = 32, PR = 10;
-const LH = 118, LT = 8, LB = 18; // loss chart
-const OH = 64, OT = 8, OB = 22; // overlap chart
-const cx = (e: number) => PL + ((CW - PL - PR) * e) / MAX_STEPS;
-const ly = (v: number) => LT + (LH - LT - LB) * (1 - Math.min(v, 0.8) / 0.8);
-const oy = (v: number) => OT + (OH - OT - OB) * (1 - v);
+// Loss chart: the plot stretches to any height; axis labels are HTML so they never distort.
+const LOSS_MAX = 0.8;
+const yTicks = [0.8, 0.6, 0.4, 0.2, 0];
+const xTicks = [0, 150, 300, 450, 600];
 ---
 <figure class="nutshell" data-seed={seed} data-max={MAX_STEPS} data-chunk={CHUNK} data-widths={WIDTHS.join(',')} data-geom={JSON.stringify({ DW, DH, xIn, xOut, yIn, yOut })} style={`--row:${rowHeight}px`}>
   <div class="reveal" data-part="head" inert>
@@ -93,33 +90,37 @@ const oy = (v: number) => OT + (OH - OT - OB) * (1 - v);
             <text class="out-label" x={xOut + 12} y={yOut + 7} dominant-baseline="central">next</text>
           </svg>
           </div>
-          <p class="note">Weights: <i class="ln pos"></i>positive <i class="ln neg"></i>negative, thicker is stronger. <span class="params"></span></p>
+          <p class="note weights">Weights: <i class="ln pos"></i>positive <i class="ln neg"></i>negative, thicker is stronger. <span class="params"></span></p>
         </div>
 
-        <div class="panel">
-          <svg class="chart loss" viewBox={`0 0 ${CW} ${LH}`} role="img" aria-label="Training and validation loss by step">
-            {[0, 0.2, 0.4, 0.6, 0.8].map((v) => <g class="grid"><line x1={PL} x2={CW - PR} y1={ly(v)} y2={ly(v)} /><text x={PL - 6} y={ly(v)} text-anchor="end" dominant-baseline="central">{v.toFixed(1)}</text></g>)}
-            <polyline class="val" points="" />
-            <polyline class="train" points="" />
-          </svg>
-          <p class="note"><i class="ln pos"></i>training loss <i class="ln neg"></i>validation loss, on a held-out fifth</p>
-          <svg class="chart overlap" viewBox={`0 0 ${CW} ${OH}`} role="img" aria-label="Overlap between prediction and simulation by step">
-            {[0, 0.5, 1].map((v) => <g class="grid"><line x1={PL} x2={CW - PR} y1={oy(v)} y2={oy(v)} /><text x={PL - 6} y={oy(v)} text-anchor="end" dominant-baseline="central">{Math.round(v * 100)}%</text></g>)}
-            {[0, 150, 300, 450, 600].map((e) => <text class="tick" x={cx(e)} y={OH - 6} text-anchor="middle">{e}</text>)}
-            <text class="tick" x={CW - PR} y={OH + 6} text-anchor="end">training steps</text>
-            <polyline class="ovl" points="" />
-            <g class="dots"></g>
-          </svg>
-          <p class="note"><i class="dot"></i>how much of your network’s prediction overlaps the simulation</p>
+        <div class="panel loss-panel">
+          <div class="loss" role="img" aria-label="Training and validation loss by training step">
+            <div class="y-axis" aria-hidden="true">
+              {yTicks.map((v) => <span style={`top:${(1 - v / LOSS_MAX) * 100}%`}>{v.toFixed(1)}</span>)}
+            </div>
+            <svg class="plot" viewBox={`0 0 ${MAX_STEPS} 100`} preserveAspectRatio="none" aria-hidden="true">
+              {yTicks.map((v) => <line class="grid" x1="0" x2={MAX_STEPS} y1={(1 - v / LOSS_MAX) * 100} y2={(1 - v / LOSS_MAX) * 100} />)}
+              <polyline class="val" points="" />
+              <polyline class="train" points="" />
+            </svg>
+            <div class="x-axis" aria-hidden="true">
+              {xTicks.map((e) => <span style={`left:${(e / MAX_STEPS) * 100}%`}>{e}</span>)}
+            </div>
+          </div>
+          <p class="note"><i class="ln pos"></i>training loss <i class="ln neg"></i>validation loss, by training step</p>
         </div>
       </div>
 
       <div class="controls">
-        <button type="button" class="btn primary" data-act="train">Train {CHUNK} steps</button>
-        <button type="button" class="btn" data-act="all">Train to the end</button>
-        <button type="button" class="btn" data-act="play">Watch side by side</button>
-        <button type="button" class="btn quiet" data-act="rock">New porous material</button>
-        <button type="button" class="btn quiet" data-act="reset">Reset</button>
+        <div class="train-group">
+          <button type="button" class="btn primary" data-act="train">Train {CHUNK} steps</button>
+          <button type="button" class="btn" data-act="all">Train to the end</button>
+        </div>
+        <div class="more-group">
+          <button type="button" class="btn" data-act="play">Watch side by side</button>
+          <button type="button" class="btn quiet" data-act="rock">New porous material</button>
+          <button type="button" class="btn quiet" data-act="reset">Reset</button>
+        </div>
         <p class="status" aria-live="polite"></p>
       </div>
     </div>
@@ -236,17 +237,14 @@ const oy = (v: number) => OT + (OH - OT - OB) * (1 - v);
     const edgeCanvas = $<HTMLCanvasElement>('canvas.edges'), edgeCtx = edgeCanvas.getContext('2d')!;
     const geom = JSON.parse(fig.dataset.geom!) as { DW: number; DH: number; xIn: number; xOut: number; yIn: number[]; yOut: number };
     const trainLine = $<SVGPolylineElement>('polyline.train'), valLine = $<SVGPolylineElement>('polyline.val');
-    const ovlLine = $<SVGPolylineElement>('polyline.ovl'), dots = $<SVGGElement>('g.dots');
     const MAX = +fig.dataset.max!, CHUNK = +fig.dataset.chunk!;
     const hidden = () => Array(+sliders.layers.value).fill(WIDTHS[+sliders.width.value]) as number[];
     let LAYERS = [NF, ...hidden(), 1];
     const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 
     // Chart scales (must match the frontmatter).
-    const CW = 320, PL = 32, PR = 10, LH = 118, LT = 8, LB = 18, OH = 64, OT = 8, OB = 22;
-    const cx = (e: number) => PL + ((CW - PL - PR) * e) / MAX;
-    const ly = (v: number) => LT + (LH - LT - LB) * (1 - Math.min(v, 0.8) / 0.8);
-    const oy = (v: number) => OT + (OH - OT - OB) * (1 - v);
+    // Loss chart coordinates: x is the training step, y runs 0 (top, loss 0.8) to 100 (bottom, loss 0).
+    const ly = (v: number) => 100 * (1 - Math.min(v, 0.8) / 0.8);
 
     let rockSeed = +fig.dataset.seed!, netSeed = 1;
     let rock: Rock, paintSim: (s: Uint8Array) => void, paintNet: (s: Uint8Array) => void;
@@ -363,11 +361,9 @@ const oy = (v: number) => OT + (OH - OT - OB) * (1 - v);
     new ResizeObserver(() => drawNetwork()).observe(edgeCanvas);
 
     function drawCharts() {
-      const pts = (a: [number, number][], y: (v: number) => number) => a.map(([e, v]) => `${cx(e).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+      const pts = (a: [number, number][], y: (v: number) => number) => a.map(([e, v]) => `${e},${y(v).toFixed(2)}`).join(' ');
       trainLine.setAttribute('points', pts(lossTr, ly));
       valLine.setAttribute('points', pts(lossVa, ly));
-      ovlLine.setAttribute('points', pts(ovl, oy));
-      dots.innerHTML = ovl.map(([e, v]) => `<circle cx="${cx(e).toFixed(1)}" cy="${oy(v).toFixed(1)}" r="2.6"></circle>`).join('');
     }
 
     // Training loss is the running mean over recent mini-batches (free, since training computes it);
@@ -520,6 +516,15 @@ const oy = (v: number) => OT + (OH - OT - OB) * (1 - v);
         setTimeout(() => { toast.classList.remove('show'); setTimeout(() => (toast.hidden = true), 400); }, 3800);
       }
       closer.focus({ preventScroll: true });
+      // On small screens, bring the simulation row to the top once the reveal settles, so the rows,
+      // panels and buttons fill the screen together. The title stays just above, a short scroll away.
+      if (matchMedia('(max-width: 640px)').matches) {
+        setTimeout(() => {
+          if (!open) return;
+          const top = simCanvas.getBoundingClientRect().top + scrollY - 10;
+          scrollTo({ top, behavior: reduce.matches ? 'auto' : 'smooth' });
+        }, reduce.matches ? 0 : 560);
+      }
       setBusy(true);
       status.textContent = 'Getting ready…';
       const ready = () => {
@@ -692,15 +697,27 @@ const oy = (v: number) => OT + (OH - OT - OB) * (1 - v);
   .input circle, .unit { fill: var(--paper); stroke: var(--slate); stroke-width: 1.1; }
   .output { fill: rgb(var(--phase-rgb)); }
 
-  .chart .grid line { stroke: var(--rule); }
-  .chart text { font-size: 9.5px; fill: var(--slate); font-variant-numeric: tabular-nums; }
-  .chart polyline { fill: none; stroke-linejoin: round; stroke-linecap: round; }
-  .chart .train { stroke: rgb(var(--phase-rgb)); stroke-width: 2; }
-  .chart .val { stroke: var(--slate); stroke-width: 1.5; stroke-dasharray: 3 3; }
-  .chart .ovl { stroke: var(--ink); stroke-width: 1.2; opacity: 0.5; }
-  .chart .dots circle { fill: var(--ink); }
+  /* Loss chart: the plot stretches; strokes keep their width whatever the aspect ratio. */
+  .loss-panel { display: flex; flex-direction: column; }
+  .loss {
+    flex: 1; min-height: 150px;
+    display: grid; grid-template-columns: 26px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 16px;
+    font-family: var(--sans); font-size: 10px; color: var(--slate); font-variant-numeric: tabular-nums;
+  }
+  .y-axis, .x-axis { position: relative; }
+  .y-axis span { position: absolute; right: 6px; transform: translateY(-50%); }
+  .x-axis { grid-column: 2; }
+  .x-axis span { position: absolute; top: 3px; transform: translateX(-50%); }
+  .x-axis span:first-child { transform: none; }
+  .x-axis span:last-child { transform: translateX(-100%); }
+  .plot { width: 100%; height: 100%; overflow: visible; }
+  .plot .grid { stroke: var(--rule); vector-effect: non-scaling-stroke; }
+  .plot polyline { fill: none; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .plot .train { stroke: rgb(var(--phase-rgb)); stroke-width: 2; }
+  .plot .val { stroke: var(--slate); stroke-width: 1.5; stroke-dasharray: 3 3; }
 
   .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+  .train-group, .more-group { display: contents; }
   .btn {
     padding: 6px 14px; border: 1px solid var(--rule); border-radius: 999px;
     background: var(--paper); color: var(--ink);
@@ -713,6 +730,27 @@ const oy = (v: number) => OT + (OH - OT - OB) * (1 - v);
   .btn.quiet { border-color: transparent; color: var(--accent); padding-inline: 6px; }
   .btn:disabled { opacity: 0.45; cursor: default; }
   .status { flex: 1 1 100%; margin: 4px 0 0; font-family: var(--sans); font-size: 12.5px; color: var(--slate); font-variant-numeric: tabular-nums; text-wrap: pretty; min-height: 1.5em; }
+
+  /* Phones: the two rows, the panels and the buttons fit on one screen together. */
+  @media (max-width: 640px) {
+    .open figcaption { margin-top: 6px; }
+    .open .caption-text { display: none; }
+    .lab { gap: 8px; margin-top: 8px; }
+    .panel { padding: 8px 10px; border-radius: 5px; }
+    .arch { gap: 4px 14px; margin-bottom: 2px; }
+    .slider { font-size: 11.5px; }
+    .note.weights { display: none; }
+    .note { margin: 2px 0 0; font-size: 11px; }
+    .loss { flex: none; height: 96px; min-height: 0; }
+    .controls { display: grid; gap: 6px; margin-top: 10px; }
+    .train-group { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .more-group { display: flex; flex-wrap: nowrap; align-items: center; gap: 2px; }
+    .more-group .btn { padding: 4px 8px; font-size: 12.5px; }
+    .more-group .btn:first-child { margin-right: auto; }
+    .btn.primary { min-width: 0; }
+    .train-group .btn { padding: 7px 10px; }
+    .status { margin-top: 2px; font-size: 12px; min-height: 3em; }
+  }
 
   /* The easter-egg prompt. */
   .toast {

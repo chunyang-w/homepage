@@ -101,32 +101,23 @@ function isFront(p: Patches, wet: (b: number) => boolean, b: number) {
 
 // ---- Training data -------------------------------------------------------------------------
 
-// `threshold[q]` is the smallest pore radius the fluid can enter once a fraction q / 200 of the pore space
-// is filled (1 / capillary pressure), recorded from the training simulation. The prediction uses it to
-// decide which cells inside a filled patch hold fluid.
+// `threshold[q]` is the smallest pore radius the fluid can enter once a fraction q / 200 of the pore
+// patches has filled (1 / capillary pressure), recorded from the training simulation. The prediction
+// uses it to decide which cells inside a filled patch hold fluid.
 export type Dataset = { X: Float32Array; Y: Uint8Array; rate: number; steps: number; threshold: Float32Array };
 
 // Simulate drainage in a training rock and turn snapshots into (inputs, fills next) pairs.
 // A generator, so the caller can spread the work over frames; it yields progress in [0, 1].
 export function* datasetSteps(rock: Rock, seed: number, cap = 4000, stride = 2): Generator<number, Dataset> {
   const sim = simulator(rock);
+  // Record the capillary pressure at each step where the fluid advanced.
+  const pressureAt: number[] = [0];
   let filledBefore = 0;
-  // Record the capillary threshold against saturation (fraction of pore cells filled), in 200 bins.
-  const thrSat = new Float32Array(201).fill(-1);
   while (sim.step()) {
-    // Record the threshold only on steps where fluid actually advanced.
-    const before = filledBefore; filledBefore = sim.filled;
-    if (sim.filled > before && sim.pressure > 0) {
-      const bin = Math.min(200, Math.round((200 * sim.filled) / rock.pores));
-      if (thrSat[bin] < 0) thrSat[bin] = 1 / sim.pressure;
-    }
+    pressureAt.push(sim.filled > filledBefore ? sim.pressure : -1);
+    filledBefore = sim.filled;
     if (sim.frame % 60 === 0) yield Math.min(0.4, sim.frame / 1500);
   }
-  // Fill gaps: backwards from the first recorded value, then forwards (the threshold only falls).
-  let firstQ = thrSat.findIndex((v) => v >= 0);
-  if (firstQ < 0) { thrSat.fill(0); firstQ = 0; }
-  for (let q = 0; q < firstQ; q++) thrSat[q] = thrSat[firstQ];
-  for (let q = firstQ + 1; q <= 200; q++) if (thrSat[q] < 0) thrSat[q] = thrSat[q - 1];
   yield 0.4;
   const p = patchesOf(rock), bt = new Float64Array(p.bw * p.bh);
   yield 0.4;
@@ -135,6 +126,29 @@ export function* datasetSteps(rock: Rock, seed: number, cap = 4000, stride = 2):
   yield 0.4;
   lists.forEach((l, b) => { bt[b] = l.length ? l.sort((a, c) => a - c)[Math.ceil(l.length / 2) - 1] : Infinity; });
   const age = (b: number) => bt[b];
+
+  // Capillary threshold against progress, measured as the fraction of pore patches filled. Using
+  // patches (not cells) keeps the prediction from stalling: patches always advance at the learned rate.
+  const thrSat = new Float32Array(201).fill(-1);
+  {
+    let porePatches = 0;
+    const perStep = new Int32Array(sim.frame + 2);
+    for (let b = 0; b < bt.length; b++) {
+      if (!p.pore[b] || (b % p.bw) * B < INLET) continue;
+      porePatches++;
+      if (bt[b] > 0 && bt[b] <= sim.frame) perStep[bt[b]]++;
+    }
+    let done = 0;
+    for (let t = 1; t <= sim.frame; t++) {
+      done += perStep[t];
+      const pr = pressureAt[t];
+      if (pr > 0) { const bin = Math.min(200, Math.round((200 * done) / Math.max(porePatches, 1))); if (thrSat[bin] < 0) thrSat[bin] = 1 / pr; }
+    }
+    let firstQ = thrSat.findIndex((v) => v >= 0);
+    if (firstQ < 0) { thrSat.fill(0); firstQ = 0; }
+    for (let q = 0; q < firstQ; q++) thrSat[q] = thrSat[firstQ];
+    for (let q = firstQ + 1; q <= 200; q++) if (thrSat[q] < 0) thrSat[q] = thrSat[q - 1];
+  }
 
   const rand = rng(seed + 7);
   const pos: Float32Array[] = [], neg: Float32Array[] = [];
@@ -286,11 +300,12 @@ export function rollout(rock: Rock, net: Pick<Network, 'forward'>, rate: number,
     }
     return top;
   };
-  let poreCells = 0, filledCells = 0;
-  for (let i = 0; i < N; i++) if (!solid[i] && i % W >= INLET) poreCells++;
-  const thresholdNow = () => (threshold ? threshold[Math.min(200, Math.round((200 * filledCells) / Math.max(poreCells, 1)))] : 0);
-  const setFluid = (i: number) => { if (state[i] !== 2) { state[i] = 2; if (i % W >= INLET) filledCells++; } };
+  let porePatches = 0, filledPatches = 0;
+  for (let b = 0; b < nb; b++) if (p.pore[b] && (b % p.bw) * B >= INLET) porePatches++;
+  const thresholdNow = () => (threshold ? threshold[Math.min(200, Math.round((200 * filledPatches) / Math.max(porePatches, 1)))] : 0);
+  const setFluid = (i: number) => { state[i] = 2; };
   const fillPatch = (b: number) => {
+    if ((b % p.bw) * B >= INLET) filledPatches++;
     const th = thresholdNow();
     for (const i of cells[b]) { if (rad[i] >= th) setFluid(i); else push(i); }
   };
