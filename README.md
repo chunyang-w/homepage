@@ -14,12 +14,13 @@ npm run build      # outputs dist/
 
 | What | Where |
 |---|---|
-| Name, position, email, sidebar links | `src/data/site.ts` |
-| Bio and research interests | `src/content/bio.md` |
+| Name, position, tagline, email, profile links | `src/data/site.ts` |
+| About and research text | `src/content/bio.md`, `src/content/research.md` |
 | News items (one file each) | `src/content/news/YYYY-MM-slug.md` |
 | Publications (one file each) | `src/content/publications/YYYY-slug.md` |
 | Avatar, figures, CV | `public/img/`, `public/files/` |
-| Page layout and styles | `src/layouts/Base.astro`, `src/styles/global.css` |
+| Header and core-sample strip | `src/components/Header.astro`, `src/components/CoreSample.astro` |
+| Design tokens (colours, fonts) and layout | `src/styles/global.css` |
 
 ### Add a publication
 

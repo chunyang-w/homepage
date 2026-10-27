@@ -1,31 +1,58 @@
 ---
 import { getCollection, render } from 'astro:content';
-import { site } from '../data/site';
 import Base from '../layouts/Base.astro';
-import Sidebar from '../components/Sidebar.astro';
+import Header from '../components/Header.astro';
 import Paper from '../components/Paper.astro';
+import { site } from '../data/site';
 import { Content as Bio } from '../content/bio.md';
+import { Content as Research } from '../content/research.md';
 
 const news = (await getCollection('news')).sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 const newsRendered = await Promise.all(news.map(async (n) => ({ ...n, Content: (await render(n)).Content })));
 const pubs = (await getCollection('publications')).sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 const fmt = (d: Date) => d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+const updated = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 ---
 <Base>
-  <Sidebar />
+  <Header />
+
   <main>
-    <Bio />
+    <section class="section" id="about">
+      <h2>About</h2>
+      <div class="prose"><Bio /></div>
+    </section>
 
-    <h2 id="news">News</h2>
-    <ul class="news">
-      {newsRendered.map(({ data, Content }) => (
-        <li><time datetime={data.date.toISOString().slice(0, 10)}>{fmt(data.date)}</time><div><Content /></div></li>
-      ))}
-    </ul>
+    <section class="section" id="research">
+      <h2>Research</h2>
+      <div class="prose"><Research /></div>
+    </section>
 
-    <h2 id="publications" class="with-aside">Publications <a href={site.scholar} target="_blank" rel="noopener">Google Scholar ↗</a></h2>
-    <ol class="papers">
-      {pubs.map((p) => <Paper {...p.data} />)}
-    </ol>
+    <section class="section" id="news">
+      <h2>News</h2>
+      <ul class="news">
+        {newsRendered.map(({ data, Content }) => (
+          <li><time datetime={data.date.toISOString().slice(0, 10)}>{fmt(data.date)}</time><div><Content /></div></li>
+        ))}
+      </ul>
+    </section>
+
+    <section class="section" id="publications">
+      <h2>Publications</h2>
+      <div>
+        <ol class="papers">
+          {pubs.map((p) => <Paper {...p.data} />)}
+        </ol>
+        <p class="more"><a href={site.scholar} target="_blank" rel="noopener">Full list on Google Scholar</a></p>
+      </div>
+    </section>
   </main>
+
+  <footer class="foot">
+    <span>© {new Date().getFullYear()} {site.name}</span>
+    <span>Updated {updated}</span>
+  </footer>
 </Base>
+
+<style>
+  .more { margin: 4px 0 0; font-family: var(--sans); font-size: 14px; font-weight: 500; }
+</style>

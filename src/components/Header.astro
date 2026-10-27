@@ -1,0 +1,58 @@
+---
+import { site } from '../data/site';
+import CoreSample from './CoreSample.astro';
+const ext = (href: string) => (href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {});
+---
+<header class="masthead">
+  <div class="id">
+    <h1>{site.name}<span class="native" lang="zh">{site.nameNative}</span></h1>
+    <p class="role">
+      {site.position}, <a href={site.affiliationUrl} {...ext(site.affiliationUrl)}>{site.affiliation}</a><br />
+      {site.tagline}
+    </p>
+    <nav class="links" aria-label="Profiles">
+      <a href={`mailto:${site.email}`}>Email</a>
+      {site.links.map((l) => <a href={l.href} {...ext(l.href)}>{l.label}</a>)}
+    </nav>
+  </div>
+  <img class="portrait" src={site.avatar} alt={`Portrait of ${site.name}`} width="128" height="168" />
+</header>
+<CoreSample />
+
+<style>
+  .masthead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 32px;
+    align-items: end;
+    margin-bottom: 36px;
+  }
+  h1 {
+    margin: 0 0 14px;
+    font-size: clamp(36px, 6vw, 52px);
+    font-weight: 500;
+    font-variation-settings: 'opsz' 60;
+    letter-spacing: -0.015em;
+    line-height: 1.05;
+  }
+  .native {
+    display: block;
+    margin-top: 8px;
+    font-size: 18px;
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    color: var(--slate);
+  }
+  .role { margin: 0 0 16px; color: var(--ink); line-height: 1.5; }
+  .role a { color: inherit; }
+  .role a:hover { color: var(--accent); }
+  .links { display: flex; flex-wrap: wrap; gap: 6px 20px; font-family: var(--sans); font-size: 14px; font-weight: 500; }
+  .portrait {
+    width: 128px; height: 168px; object-fit: cover; object-position: 50% 20%;
+    border-radius: 3px; filter: grayscale(0.15);
+  }
+  @media (max-width: 560px) {
+    .masthead { gap: 18px; align-items: start; }
+    .portrait { width: 84px; height: 110px; }
+  }
+</style>

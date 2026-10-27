@@ -1,0 +1,2 @@
+- **Machine learning for science.** Neural surrogate models that accelerate scientific computation, with a focus on multiphase flow in porous media.
+- **Computational methods.** Finite element and finite difference methods for physical simulation.

@@ -21,44 +21,60 @@ const ext = (href: string) => (href.startsWith('http') ? { target: '_blank', rel
 ---
 <li class="paper">
   {image && (
-    <a class="paper-fig" href={url} {...ext(url)} tabindex="-1" aria-hidden="true">
+    <a class="fig" href={url} {...ext(url)} tabindex="-1" aria-hidden="true">
       <img src={image} alt="" loading="lazy" />
     </a>
   )}
-  <div class="paper-text">
-    <a class="paper-title" href={url} {...ext(url)}>{title}</a>
-    <div class="paper-authors">
+  <div class="text">
+    <a class="title" href={url} {...ext(url)}>{title}</a>
+    <div class="authors">
       {authors.map((a, i) => (
         <Fragment>
-          {a.replace(/\*$/, '') === me ? <strong>{a}</strong> : a}
+          {a.replace(/\*$/, '') === me ? <span class="me">{a}</span> : a}
           {i < authors.length - 1 && ', '}
         </Fragment>
       ))}
     </div>
-    <div class="paper-links">
-      <a class="paper-venue" href={venueUrl} {...ext(venueUrl)}>{venue}</a>
+    <div class="meta">
+      <a class="venue" href={venueUrl} {...ext(venueUrl)}>{venue}</a>
       {links.map((l) => (
         <Fragment>
-          <span class="sep">/</span>
+          <span class="sep" aria-hidden="true">/</span>
           <a href={l.url} {...ext(l.url)}>{l.label}</a>
         </Fragment>
       ))}
     </div>
-    {highlight && <div class="paper-highlight">{highlight}</div>}
+    {highlight && <div class="highlight">{highlight}</div>}
   </div>
 </li>
 
 <style>
-  .paper { display: grid; grid-template-columns: 200px 1fr; gap: 24px; align-items: center; margin-bottom: 28px; }
-  @media (max-width: 520px) { .paper { grid-template-columns: 1fr; gap: 10px; } }
-  .paper-fig { display: block; border-radius: 4px; overflow: hidden; background: #fff; }
-  .paper-fig img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; }
-  .paper-text { line-height: 1.5; }
-  .paper-title { display: block; font-weight: 600; color: var(--fg); line-height: 1.35; margin-bottom: 4px; }
-  .paper-authors { color: var(--muted); font-size: 0.95rem; }
-  .paper-authors strong { color: var(--fg); font-weight: 600; }
-  .paper-links { margin-top: 4px; font-size: 0.95rem; }
-  .paper-venue { font-weight: 600; color: var(--fg); }
-  .paper-links .sep { color: var(--muted); margin: 0 6px; }
-  .paper-highlight { margin-top: 4px; color: #c0392b; font-style: italic; font-size: 0.9rem; }
+  .paper {
+    display: grid;
+    grid-template-columns: 184px minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
+    padding: 22px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .paper:first-child { border-top: 0; padding-top: 2px; }
+  @media (max-width: 560px) { .paper { grid-template-columns: minmax(0, 1fr); gap: 12px; } }
+
+  .fig { display: block; background: #fff; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+  .fig img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; padding: 6px; }
+
+  .title {
+    display: block; margin-bottom: 6px;
+    color: var(--ink); font-size: 18px; font-weight: 600; line-height: 1.32;
+    font-variation-settings: 'opsz' 24; letter-spacing: -0.005em;
+  }
+  .title:hover { color: var(--accent); text-decoration: none; }
+  .authors { color: var(--slate); font-size: 15.5px; line-height: 1.5; }
+  .me { color: var(--ink); font-weight: 600; }
+
+  .meta { margin-top: 8px; font-family: var(--sans); font-size: 13.5px; font-weight: 500; }
+  .venue { color: var(--ink); font-weight: 600; }
+  .venue:hover { color: var(--accent); }
+  .sep { color: var(--grain); margin: 0 7px; }
+  .highlight { margin-top: 6px; color: var(--accent); font-style: italic; font-size: 15px; }
 </style>
