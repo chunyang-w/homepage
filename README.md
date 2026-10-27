@@ -19,7 +19,7 @@ npm run build      # outputs dist/
 | News items (one file each) | `src/content/news/YYYY-MM-slug.md` |
 | Publications (one file each) | `src/content/publications/YYYY-slug.md` |
 | Avatar, figures, CV | `public/img/`, `public/files/` |
-| Header and core-sample strip | `src/components/Header.astro`, `src/components/CoreSample.astro` |
+| Header and core-sample strip (invasion simulation, click to replay) | `src/components/Header.astro`, `src/components/CoreSample.astro` |
 | Design tokens (colours, fonts) and layout | `src/styles/global.css` |
 
 ### Add a publication

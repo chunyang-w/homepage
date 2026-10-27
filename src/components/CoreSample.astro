@@ -1,62 +1,169 @@
 ---
-// A cross-section of a porous medium: grey grains, with the ultramarine phase
-// invading the pore space from the left. Generated at build time from a fixed seed.
-interface Props { seed?: number; width?: number; height?: number; front?: number }
-const { seed = 7, width = 832, height = 56, front = 0.62 } = Astro.props;
-
-function rng(a: number) {
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const rand = rng(seed);
-
-const grains: { x: number; y: number; r: number }[] = [];
-// Grains may touch and slightly fuse, which leaves narrow, connected pores.
-for (let i = 0; i < 40000 && grains.length < 900; i++) {
-  const r = 3.5 + Math.pow(rand(), 1.6) * 11;
-  const x = rand() * width;
-  const y = -6 + rand() * (height + 12);
-  if (grains.every((g) => Math.hypot(g.x - x, g.y - y) > (g.r + r) * 0.86)) grains.push({ x, y, r });
-}
-
-// A fingered displacement front: smooth drift plus sharp fingers.
-const step = 2;
-const pts: [number, number][] = [];
-const p1 = rand() * 6, p2 = rand() * 6;
-for (let y = 0; y <= height; y += step) {
-  const drift = Math.sin(y / 9 + p1) * 26 + Math.sin(y / 3.7 + p2) * 9;
-  const finger = rand() < 0.08 ? rand() * 70 : 0;
-  pts.push([front * width + drift + finger, y]);
-}
-const phase = `M0 0 ${pts.map(([x, y]) => `L${x.toFixed(1)} ${y}`).join(' ')} L0 ${height} Z`;
-const f = (n: number) => n.toFixed(1);
+// A thin core sample: a 2D packing of grains with a non-wetting fluid invading the
+// pore space from the left by invasion percolation. Each step takes the widest
+// available throat, so the front pauses at narrow throats and jumps through pore
+// bodies, the way drainage looks in a micromodel. Runs once on load; click replays.
+interface Props { height?: number; seed?: number }
+const { height = 72, seed = 11 } = Astro.props;
 ---
-<svg class="core" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Cross-section of a porous medium with fluid invading the pore space">
-  <defs>
-    <clipPath id="core-frame"><rect width={width} height={height} rx="3" /></clipPath>
-  </defs>
-  <g clip-path="url(#core-frame)">
-    <path class="core-phase" d={phase} />
-    <g class="core-grains">
-      {grains.map((g) => <circle cx={f(g.x)} cy={f(g.y)} r={f(g.r)} />)}
-    </g>
-  </g>
-</svg>
+<canvas class="core" data-seed={seed} style={`height:${height}px`} aria-label="Simulation of fluid invading the pore space of a porous medium" title="Click to replay"></canvas>
+
+<script>
+  type Grain = { x: number; y: number; r: number };
+
+  function rng(a: number) {
+    return () => {
+      a |= 0; a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function parseColor(c: string): [number, number, number] {
+    const m = c.match(/\d+(\.\d+)?/g)?.map(Number) ?? [0, 0, 0];
+    return [m[0], m[1], m[2]];
+  }
+
+  class Heap {
+    keys: number[] = []; vals: number[] = [];
+    get size() { return this.keys.length; }
+    push(k: number, v: number) {
+      const K = this.keys, V = this.vals; K.push(k); V.push(v);
+      let i = K.length - 1;
+      while (i > 0) { const p = (i - 1) >> 1; if (K[p] >= K[i]) break; [K[p], K[i]] = [K[i], K[p]]; [V[p], V[i]] = [V[i], V[p]]; i = p; }
+    }
+    peek() { return this.keys[0]; }
+    pop() {
+      const K = this.keys, V = this.vals, top = V[0], lk = K.pop()!, lv = V.pop()!;
+      if (K.length) {
+        K[0] = lk; V[0] = lv; let i = 0;
+        for (;;) {
+          const l = 2 * i + 1, r = l + 1; let m = i;
+          if (l < K.length && K[l] > K[m]) m = l;
+          if (r < K.length && K[r] > K[m]) m = r;
+          if (m === i) break;
+          [K[m], K[i]] = [K[i], K[m]]; [V[m], V[i]] = [V[i], V[m]]; i = m;
+        }
+      }
+      return top;
+    }
+  }
+
+  const SCALE = 2; // simulation cells per CSS pixel
+
+  function setup(canvas: HTMLCanvasElement) {
+    const ctx = canvas.getContext('2d')!;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+    let raf = 0;
+    let sim: ReturnType<typeof build> | null = null;
+
+    function build() {
+      const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
+      const W = Math.round(cssW * SCALE), H = Math.round(cssH * SCALE);
+      canvas.width = W; canvas.height = H;
+      const rand = rng(Number(canvas.dataset.seed) + W);
+
+      // Grains: polydisperse, never touching, so every pore connects through a throat.
+      const grains: Grain[] = [];
+      const cell = 36, cols = Math.ceil(W / cell) + 2, rows = Math.ceil(H / cell) + 2;
+      const buckets: Grain[][] = Array.from({ length: cols * rows }, () => []);
+      const bi = (x: number, y: number) => (Math.floor(y / cell) + 1) * cols + Math.floor(x / cell) + 1;
+      for (let i = 0, n = 0; i < 60000 && n < 4000; i++) {
+        const r = 8 + Math.pow(rand(), 1.5) * 28;
+        const x = rand() * W, y = -8 + rand() * (H + 16);
+        const loose = 0.5 + 0.5 * Math.sin(x / 140 + 1.3) * Math.cos(y / 50); // looser and tighter patches
+        const gap = 3.5 + Math.pow(rand(), 3) * 22 + loose * 7; // ≥3.5 cells so every throat rasterises open
+        let ok = true;
+        const b = bi(x, y);
+        for (let dy = -2; dy <= 2 && ok; dy++) for (let dx = -2; dx <= 2 && ok; dx++) {
+          const k = b + dy * cols + dx; if (k < 0 || k >= buckets.length) continue;
+          for (const g of buckets[k]) if (Math.hypot(g.x - x, g.y - y) < g.r + r + gap) { ok = false; break; }
+        }
+        if (ok) { const g = { x, y, r }; grains.push(g); buckets[b].push(g); n++; }
+      }
+
+      // Pore radius field: distance from each pore cell to the nearest grain surface.
+      const state = new Uint8Array(W * H); // 0 pore, 1 grain, 2 invaded
+      const rad = new Float32Array(W * H);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        let d = 1e9; const b = bi(x, y);
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+          const k = b + dy * cols + dx; if (k < 0 || k >= buckets.length) continue;
+          for (const g of buckets[k]) { const e = Math.hypot(g.x - x, g.y - y) - g.r; if (e < d) d = e; }
+        }
+        const i = y * W + x;
+        if (d <= 0) state[i] = 1; else rad[i] = d;
+      }
+
+      // Invasion percolation from the left face, widest throat first.
+      const heap = new Heap();
+      const queued = new Uint8Array(W * H);
+      for (let y = 0; y < H; y++) { const i = y * W; if (!state[i]) { heap.push(rad[i], i); queued[i] = 1; } }
+      let pressure = 0; // 1 / entry radius; rises while the front is stuck
+      let breakthrough = false, tail = 0;
+
+      function invade(i: number) {
+        state[i] = 2;
+        const x = i % W;
+        if (x >= W - 1) breakthrough = true;
+        const nb = [i - 1, i + 1, i - W, i + W];
+        if (x === 0) nb[0] = -1; if (x === W - 1) nb[1] = -1;
+        for (const j of nb) if (j >= 0 && j < W * H && !state[j] && !queued[j]) { queued[j] = 1; heap.push(rad[j], j); }
+      }
+
+      function step(): boolean {
+        if (breakthrough) { if (tail++ < 24) { let n = 0; while (heap.size && 1 / heap.peek() <= pressure && n++ < 40) invade(heap.pop()); return true; } return false; }
+        if (!heap.size) return false;
+        let n = 0;
+        while (heap.size && 1 / heap.peek() <= pressure && n < 450) { invade(heap.pop()); n++; }
+        if (n === 0) pressure += Math.max(0.0022, (1 / heap.peek() - pressure) * 0.08); // stuck: build pressure, pause bounded
+        return true;
+      }
+
+      function finish() { while (step()); }
+
+      const img = ctx.createImageData(W, H);
+      function draw() {
+        const cs = getComputedStyle(canvas);
+        const paper = parseColor(cs.getPropertyValue('--paper-rgb') || '255,255,255');
+        const grain = parseColor(cs.getPropertyValue('--grain-rgb') || '220,222,228');
+        const phase = parseColor(cs.getPropertyValue('--phase-rgb') || '36,48,200');
+        const d = img.data;
+        for (let i = 0, p = 0; i < W * H; i++, p += 4) {
+          const s = state[i];
+          let c = s === 1 ? grain : s === 2 ? phase : paper;
+          if (s === 2) {
+            const x = i % W;
+            const rim = (x > 0 && state[i - 1] === 0) || (x < W - 1 && state[i + 1] === 0) || (i >= W && state[i - W] === 0) || (i + W < W * H && state[i + W] === 0);
+            const t = rim ? 0.45 : Math.min(rad[i] / 12, 1) * 0.12; // bright meniscus, faint depth shading
+            d[p] = c[0] + (paper[0] - c[0]) * t; d[p + 1] = c[1] + (paper[1] - c[1]) * t; d[p + 2] = c[2] + (paper[2] - c[2]) * t;
+          } else { d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2]; }
+          d[p + 3] = 255;
+        }
+        ctx.putImageData(img, 0, 0);
+      }
+      return { step, finish, draw };
+    }
+
+    function run() {
+      cancelAnimationFrame(raf);
+      sim = build();
+      if (reduce.matches) { sim.finish(); sim.draw(); return; }
+      const tick = () => { const more = sim!.step(); sim!.draw(); if (more) raf = requestAnimationFrame(tick); };
+      raf = requestAnimationFrame(tick);
+    }
+
+    run();
+    canvas.addEventListener('click', run);
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => sim?.draw());
+    let w = canvas.clientWidth;
+    new ResizeObserver(() => { if (Math.abs(canvas.clientWidth - w) > 8) { w = canvas.clientWidth; run(); } }).observe(canvas);
+  }
+
+  document.querySelectorAll<HTMLCanvasElement>('canvas.core').forEach(setup);
+</script>
 
 <style>
-  .core { display: block; width: 100%; height: auto; }
-  .core-grains circle { fill: var(--grain); }
-  .core-phase {
-    fill: var(--phase);
-    opacity: 0.92;
-    animation: invade 2.4s cubic-bezier(0.22, 0.7, 0.2, 1) 0.25s both;
-  }
-  @keyframes invade {
-    from { clip-path: inset(0 100% 0 0); }
-    to { clip-path: inset(0 0 0 0); }
-  }
+  .core { display: block; width: 100%; border-radius: 3px; cursor: pointer; image-rendering: auto; }
 </style>

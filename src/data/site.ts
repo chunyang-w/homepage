@@ -8,9 +8,9 @@ export const site = {
   position: 'Ph.D. Student',
   affiliation: 'Imperial College London',
   affiliationUrl: 'https://www.imperial.ac.uk',
-  tagline: 'Machine learning for multiphase flow in porous media',
+  tagline: ['AI for Physics', 'Multiphase Flow in Porous Media'],
   email: 'chunyang.w@outlook.com',
-  description: "Chunyang Wang's academic homepage",
+  description: "Chunyang Wang, Ph.D. student at Imperial College London working on AI for physics and multiphase flow in porous media.",
   avatar: '/img/avatar.webp',
   links: [
     { label: 'CV', href: '/files/cv.pdf' },
