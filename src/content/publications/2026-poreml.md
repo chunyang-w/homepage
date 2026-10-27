@@ -7,6 +7,6 @@ date: 2026-10-07
 image: /img/pub-poreml.webp
 links:
   - { label: Paper, url: "https://arxiv.org/pdf/2610.10314" }
-  - { label: Code, url: "https://github.com/PoreML/poreml" }
+  - { label: Code, url: "https://github.com/PoreML" }
   - { label: Hugging Face, url: "https://huggingface.co/PoreML" }
 ---
