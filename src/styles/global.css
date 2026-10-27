@@ -8,8 +8,8 @@
   --accent: #2430c8;
   --phase: #2430c8;
   --paper-rgb: 255, 255, 255;
-  --grain-rgb: 214, 217, 224;
-  --water-rgb: 208, 234, 239;
+  --grain-rgb: 196, 200, 208;
+  --water-rgb: 238, 240, 243;
   --phase-rgb: 36, 48, 200;
 
   --serif: 'Source Serif 4 Variable', 'Source Serif Pro', Georgia, serif;
@@ -29,8 +29,8 @@
     --accent: #9aa6ff;
     --phase: #4a57e6;
     --paper-rgb: 16, 18, 22;
-    --grain-rgb: 46, 50, 60;
-    --water-rgb: 40, 92, 108;
+    --grain-rgb: 76, 81, 92;
+    --water-rgb: 36, 40, 48;
     --phase-rgb: 74, 87, 230;
   }
 }
@@ -43,8 +43,8 @@
   --accent: #9aa6ff;
   --phase: #4a57e6;
   --paper-rgb: 16, 18, 22;
-  --grain-rgb: 46, 50, 60;
-  --water-rgb: 40, 92, 108;
+  --grain-rgb: 76, 81, 92;
+  --water-rgb: 36, 40, 48;
   --phase-rgb: 74, 87, 230;
 }
 
