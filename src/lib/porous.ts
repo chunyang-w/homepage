@@ -117,10 +117,12 @@ export function simulator(rock: Rock) {
   for (let i = 0; i < N; i++) if (solid[i]) state[i] = 1;
   for (let y = 0; y < H; y++) for (let x = 0; x < INLET; x++) { const i = y * W + x; if (!solid[i]) { state[i] = 2; time[i] = 0; queued[i] = 1; } }
   for (let y = 0; y < H; y++) for (const j of neighbours(y * W + INLET - 1, W, N, nb)) if (!state[j] && !queued[j]) { queued[j] = 1; heap.push(rad[j], j); }
-  let pressure = 0, frame = 0, breakthrough = false, tail = 0;
+  let pressure = 0, frame = 0, breakthrough = false, tail = 0, filled = 0;
   const invade = (i: number) => {
     state[i] = 2; time[i] = frame;
-    if (i % W === W - 1) breakthrough = true;
+    const x = i % W;
+    if (x >= INLET) filled++;
+    if (x === W - 1) breakthrough = true;
     for (const j of neighbours(i, W, N, nb)) if (!state[j] && !queued[j]) { queued[j] = 1; heap.push(rad[j], j); }
   };
   function step(): boolean {
@@ -136,7 +138,9 @@ export function simulator(rock: Rock) {
     if (n === 0) pressure += Math.max(0.0025, (1 / heap.peek() - pressure) * 0.1);
     return true;
   }
-  return { state, time, step, get frame() { return frame; } };
+  // `pressure` is the capillary pressure (1 / entry radius) reached so far.
+  // `filled` counts invaded pore cells outside the inlet.
+  return { state, time, step, get frame() { return frame; }, get pressure() { return pressure; }, get filled() { return filled; } };
 }
 
 export function saturation(rock: Rock, state: Uint8Array) {

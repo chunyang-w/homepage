@@ -101,13 +101,32 @@ function isFront(p: Patches, wet: (b: number) => boolean, b: number) {
 
 // ---- Training data -------------------------------------------------------------------------
 
-export type Dataset = { X: Float32Array; Y: Uint8Array; rate: number; steps: number };
+// `threshold[q]` is the smallest pore radius the fluid can enter once a fraction q / 200 of the pore space
+// is filled (1 / capillary pressure), recorded from the training simulation. The prediction uses it to
+// decide which cells inside a filled patch hold fluid.
+export type Dataset = { X: Float32Array; Y: Uint8Array; rate: number; steps: number; threshold: Float32Array };
 
 // Simulate drainage in a training rock and turn snapshots into (inputs, fills next) pairs.
 // A generator, so the caller can spread the work over frames; it yields progress in [0, 1].
-export function* datasetSteps(rock: Rock, seed: number, cap = 4000): Generator<number, Dataset> {
+export function* datasetSteps(rock: Rock, seed: number, cap = 4000, stride = 2): Generator<number, Dataset> {
   const sim = simulator(rock);
-  while (sim.step()) if (sim.frame % 60 === 0) yield Math.min(0.4, sim.frame / 1500);
+  let filledBefore = 0;
+  // Record the capillary threshold against saturation (fraction of pore cells filled), in 200 bins.
+  const thrSat = new Float32Array(201).fill(-1);
+  while (sim.step()) {
+    // Record the threshold only on steps where fluid actually advanced.
+    const before = filledBefore; filledBefore = sim.filled;
+    if (sim.filled > before && sim.pressure > 0) {
+      const bin = Math.min(200, Math.round((200 * sim.filled) / rock.pores));
+      if (thrSat[bin] < 0) thrSat[bin] = 1 / sim.pressure;
+    }
+    if (sim.frame % 60 === 0) yield Math.min(0.4, sim.frame / 1500);
+  }
+  // Fill gaps: backwards from the first recorded value, then forwards (the threshold only falls).
+  let firstQ = thrSat.findIndex((v) => v >= 0);
+  if (firstQ < 0) { thrSat.fill(0); firstQ = 0; }
+  for (let q = 0; q < firstQ; q++) thrSat[q] = thrSat[firstQ];
+  for (let q = firstQ + 1; q <= 200; q++) if (thrSat[q] < 0) thrSat[q] = thrSat[q - 1];
   yield 0.4;
   const p = patchesOf(rock), bt = new Float64Array(p.bw * p.bh);
   yield 0.4;
@@ -119,7 +138,7 @@ export function* datasetSteps(rock: Rock, seed: number, cap = 4000): Generator<n
 
   const rand = rng(seed + 7);
   const pos: Float32Array[] = [], neg: Float32Array[] = [];
-  for (let t = 1; t < sim.frame - 1; t += 2) {
+  for (let t = 1; t < sim.frame - 1; t += stride) {
     if (t % 25 === 1) yield 0.4 + (0.6 * t) / sim.frame;
     const wet = (b: number) => bt[b] <= t;
     for (let b = 0; b < bt.length; b++) {
@@ -139,7 +158,7 @@ export function* datasetSteps(rock: Rock, seed: number, cap = 4000): Generator<n
   rows.forEach(([f, y], s) => { X.set(f, s * NF); Y[s] = y; });
   let filled = 0;
   for (let b = 0; b < bt.length; b++) if (bt[b] > 0 && bt[b] < Infinity) filled++;
-  return { X, Y, rate: filled / sim.frame, steps: sim.frame };
+  return { X, Y, rate: filled / sim.frame, steps: sim.frame, threshold: thrSat };
 }
 
 // Generate a training rock and its dataset, as one sliceable generator.
@@ -242,7 +261,7 @@ export type Network = ReturnType<typeof network>;
 // Roll the flow forward with the network alone. Each step the highest-scoring patches on the front
 // fill, at the rate learned from the training rock. Scores are cached and only recomputed within
 // two patches of anything that changed in the last two steps.
-export function rollout(rock: Rock, net: Network, rate: number) {
+export function rollout(rock: Rock, net: Pick<Network, 'forward'>, rate: number, threshold?: Float32Array, scoreOf?: (b: number) => number) {
   const { W, H, solid } = rock, p = patchesOf(rock), N = W * H, nb = p.bw * p.bh;
   const age = new Float64Array(nb).fill(Infinity);
   for (let b = 0; b < nb; b++) if ((b % p.bw) * B < INLET && p.pore[b]) age[b] = 0;
@@ -250,6 +269,31 @@ export function rollout(rock: Rock, net: Network, rate: number) {
   for (let i = 0; i < N; i++) state[i] = solid[i] ? 1 : age[p.map[i]] === 0 || i % W < INLET ? 2 : 0;
   const cells: number[][] = Array.from({ length: nb }, () => []);
   for (let i = 0; i < N; i++) if (!solid[i]) cells[p.map[i]].push(i);
+  // Inside a filled patch, fluid occupies only cells wider than the current capillary threshold;
+  // narrower cells wait in a max-heap until the threshold falls far enough.
+  const { rad } = rock;
+  const pk: number[] = [], pv: number[] = [];
+  const push = (i: number) => {
+    pk.push(rad[i]); pv.push(i);
+    let c = pk.length - 1;
+    while (c > 0) { const q = (c - 1) >> 1; if (pk[q] >= pk[c]) break; [pk[q], pk[c]] = [pk[c], pk[q]]; [pv[q], pv[c]] = [pv[c], pv[q]]; c = q; }
+  };
+  const pop = () => {
+    const top = pv[0], lk = pk.pop()!, lv = pv.pop()!;
+    if (pk.length) {
+      pk[0] = lk; pv[0] = lv; let c = 0;
+      for (;;) { const l = 2 * c + 1, r2 = l + 1; let m = c; if (l < pk.length && pk[l] > pk[m]) m = l; if (r2 < pk.length && pk[r2] > pk[m]) m = r2; if (m === c) break; [pk[m], pk[c]] = [pk[c], pk[m]]; [pv[m], pv[c]] = [pv[c], pv[m]]; c = m; }
+    }
+    return top;
+  };
+  let poreCells = 0, filledCells = 0;
+  for (let i = 0; i < N; i++) if (!solid[i] && i % W >= INLET) poreCells++;
+  const thresholdNow = () => (threshold ? threshold[Math.min(200, Math.round((200 * filledCells) / Math.max(poreCells, 1)))] : 0);
+  const setFluid = (i: number) => { if (state[i] !== 2) { state[i] = 2; if (i % W >= INLET) filledCells++; } };
+  const fillPatch = (b: number) => {
+    const th = thresholdNow();
+    for (const i of cells[b]) { if (rad[i] >= th) setFluid(i); else push(i); }
+  };
 
   let t = 0, budget = 0;
   const wetAt = (b: number) => age[b] <= t, ageOf = (b: number) => age[b];
@@ -279,12 +323,12 @@ export function rollout(rock: Rock, net: Network, rate: number) {
       let best = -1, bestScore = -1;
       for (const b of front) {
         if (!inFront[b]) continue;
-        if (dirty[b]) { features(p, ageOf, t, b, x, 0); score[b] = net.forward(x, 0); dirty[b] = 0; }
+        if (dirty[b]) { if (scoreOf) score[b] = scoreOf(b); else { features(p, ageOf, t, b, x, 0); score[b] = net.forward(x, 0); } dirty[b] = 0; }
         if (score[b] > bestScore) { bestScore = score[b]; best = b; }
       }
       if (best < 0) break;
       age[best] = t; inFront[best] = 0; filled.push(best);
-      for (const i of cells[best]) state[i] = 2;
+      fillPatch(best);
       const bx = best % p.bw, by = (best / p.bw) | 0;
       if (bx > 0) consider(best - 1); if (bx < p.bw - 1) consider(best + 1);
       if (by > 0) consider(best - p.bw); if (by < p.bh - 1) consider(best + p.bw);
@@ -296,6 +340,8 @@ export function rollout(rock: Rock, net: Network, rate: number) {
     for (const b of before) touch(b);
     before = recent; recent = filled;
     t++;
+    const th = thresholdNow();
+    while (pk.length && pk[0] >= th) setFluid(pop());
   }
   return { state, step };
 }
