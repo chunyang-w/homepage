@@ -1,6 +1,6 @@
 # homepage
 
-Personal academic homepage. Astro static site, content in Markdown, deployed on Cloudflare Pages.
+Personal academic homepage. Astro static site, content in Markdown, deployed on Cloudflare Workers.
 
 ## Develop
 
@@ -47,11 +47,18 @@ Fields are validated by the schema in `src/content.config.ts`. Entries sort by y
 
 Create `src/content/news/2026-05-neurips.md` with a `date:` in the front matter and the text as the body.
 
-## Deploy (Cloudflare Pages)
+## Deploy (Cloudflare Workers)
 
-1. Push this repo to GitHub.
-2. Cloudflare dashboard → Workers & Pages → Create → Pages → Connect to Git.
-3. Framework preset **Astro**, build command `npm run build`, output directory `dist`.
-4. Add your custom domain under the project's Custom domains tab, then update `site` in `astro.config.mjs` to match.
+The site is fully static. `wrangler.jsonc` tells Workers to serve `dist/`, and `.node-version` pins Node 22 for the build.
 
-Every push to `main` deploys; other branches get preview URLs.
+1. Cloudflare dashboard → Workers & Pages → Create → Import a repository → `chunyang-w/homepage`.
+2. Build command `npm run build`, deploy command `npx wrangler deploy`, production branch `main`.
+3. Add your custom domain under the Worker's Settings → Domains & Routes, then update `site` in `astro.config.mjs` to match.
+
+Every push to `main` deploys. Other branches get preview URLs.
+
+Check a deploy locally without uploading:
+
+```bash
+npm run build && npx wrangler deploy --dry-run
+```

@@ -1,0 +1,9 @@
+{
+  // Cloudflare Workers config. Serves the static Astro build in dist/.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "homepage",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist"
+  }
+}
