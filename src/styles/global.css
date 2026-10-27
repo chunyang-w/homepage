@@ -1,0 +1,111 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #6a737d;
+  --rule: #e3e6ea;
+  --accent: #1a5fb4;
+  --accent-soft: #eaf1fb;
+  --serif: Georgia, 'Times New Roman', 'Noto Serif', serif;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --maxw: 900px;
+  --sidebar: 220px;
+  --gap: 48px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #121416;
+    --fg: #e6e8eb;
+    --muted: #9aa3ad;
+    --rule: #2b3036;
+    --accent: #7fb0ff;
+    --accent-soft: #1b2635;
+  }
+}
+:root[data-theme='dark'] {
+  --bg: #121416;
+  --fg: #e6e8eb;
+  --muted: #9aa3ad;
+  --rule: #2b3036;
+  --accent: #7fb0ff;
+  --accent-soft: #1b2635;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.6;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+img { max-width: 100%; height: auto; display: block; }
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 48px 16px 64px;
+  display: grid;
+  grid-template-columns: var(--sidebar) 1fr;
+  gap: var(--gap);
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .wrap { grid-template-columns: 1fr; gap: 24px; padding-top: 32px; }
+}
+
+/* Sidebar */
+.side { position: sticky; top: 48px; }
+@media (max-width: 720px) { .side { position: static; } }
+.side img.avatar { width: 100%; max-width: 200px; border-radius: 6px; margin: 0 auto 16px; }
+@media (max-width: 720px) { .side img.avatar { max-width: 140px; margin-left: 0; } }
+.side h1 { font-size: 1.5rem; margin: 0 0 2px; font-weight: 600; line-height: 1.2; }
+.side .native { color: var(--muted); font-size: 1rem; font-weight: 400; }
+.side .meta { margin: 6px 0 0; color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
+.side .meta a { color: inherit; }
+.side .email { margin-top: 10px; font-family: var(--sans); font-size: 0.85rem; }
+.side .links { list-style: none; padding: 0; margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.side .links a {
+  display: inline-block; padding: 3px 10px; border: 1px solid var(--rule); border-radius: 999px;
+  font-family: var(--sans); font-size: 0.8rem; color: var(--fg);
+}
+.side .links a:hover { background: var(--accent-soft); border-color: var(--accent); text-decoration: none; }
+
+/* Main */
+main h2 {
+  font-size: 1.25rem; font-weight: 600; margin: 32px 0 12px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--rule);
+}
+main > :first-child h2, main h2:first-child { margin-top: 0; }
+main p { margin: 0 0 14px; }
+main ul { padding-left: 1.2em; margin: 0 0 14px; }
+main li { margin-bottom: 6px; }
+
+/* News */
+.news { list-style: none; padding: 0; }
+.news li { display: grid; grid-template-columns: 6em 1fr; gap: 12px; margin-bottom: 8px; }
+.news time { color: var(--muted); font-family: var(--sans); font-size: 0.85rem; padding-top: 3px; white-space: nowrap; }
+
+/* Publications */
+.pubs { list-style: none; padding: 0; margin: 0; }
+.pub { display: grid; grid-template-columns: 150px 1fr; gap: 20px; margin-bottom: 22px; }
+@media (max-width: 520px) { .pub { grid-template-columns: 1fr; gap: 10px; } }
+.pub .thumb { border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: #fff; }
+.pub .thumb img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.pub .title { font-weight: 600; line-height: 1.35; }
+.pub .title a { color: inherit; }
+.pub .authors { margin-top: 2px; }
+.pub .venue { color: var(--muted); font-style: italic; margin-top: 2px; }
+.pub .actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pub .actions a {
+  font-family: var(--sans); font-size: 0.75rem; padding: 2px 8px; border: 1px solid var(--rule);
+  border-radius: 4px; color: var(--fg);
+}
+.pub .actions a:hover { background: var(--accent-soft); border-color: var(--accent); text-decoration: none; }
+.pub .notes { color: #c0392b; font-weight: 600; font-family: var(--sans); font-size: 0.8rem; }
+.pub .body { margin-top: 6px; font-size: 0.92rem; color: var(--muted); }
+
+footer { grid-column: 1 / -1; margin-top: 48px; color: var(--muted); font-family: var(--sans); font-size: 0.75rem; }

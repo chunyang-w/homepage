@@ -1,0 +1,17 @@
+---
+import { site } from '../data/site';
+---
+<aside class="side">
+  <img class="avatar" src={site.avatar} alt={`Portrait of ${site.name}`} width="200" height="264" />
+  <h1>{site.name} <span class="native">{site.nameNative}</span></h1>
+  <p class="meta">
+    {site.position}<br />
+    <a href={site.affiliationUrl}>{site.affiliation}</a>
+  </p>
+  <p class="email"><a href={`mailto:${site.email}`}>{site.email}</a></p>
+  <ul class="links">
+    {site.links.map((l) => (
+      <li><a href={l.href} target={l.href.startsWith('http') ? '_blank' : undefined} rel="noopener">{l.label}</a></li>
+    ))}
+  </ul>
+</aside>

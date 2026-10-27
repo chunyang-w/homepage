@@ -1,0 +1,31 @@
+---
+import '../styles/global.css';
+import { site } from '../data/site';
+
+interface Props { title?: string; description?: string }
+const { title = site.name, description = site.description } = Astro.props;
+const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : undefined;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={site.name} />
+    {canonical && <link rel="canonical" href={canonical} />}
+    <link rel="icon" href="/img/favicon.png" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="/img/favicon-dark.png" media="(prefers-color-scheme: dark)" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content={new URL(site.avatar, Astro.site ?? Astro.url).href} />
+  </head>
+  <body>
+    <div class="wrap">
+      <slot />
+      <footer>© {new Date().getFullYear()} {site.name}</footer>
+    </div>
+  </body>
+</html>
