@@ -42,7 +42,7 @@ const updated = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'n
         <ol class="papers">
           {pubs.map((p) => <Paper {...p.data} />)}
         </ol>
-        <p class="more"><a href={site.scholar} target="_blank" rel="noopener">Full list on Google Scholar</a></p>
+        <p class="more"><a href={site.scholar} target="_blank" rel="noopener">All publications on Google Scholar</a></p>
       </div>
     </section>
   </main>
@@ -54,5 +54,5 @@ const updated = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'n
 </Base>
 
 <style>
-  .more { margin: 4px 0 0; font-family: var(--sans); font-size: 14px; font-weight: 500; }
+  .more { margin: 10px 0 0; font-family: var(--sans); font-size: 14px; font-weight: 500; }
 </style>

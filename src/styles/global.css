@@ -71,7 +71,9 @@ strong { font-weight: 600; }
   display: grid;
   grid-template-columns: var(--margin-col) minmax(0, 1fr);
   column-gap: var(--gutter);
-  margin-top: 44px;
+  margin-top: 36px;
+  padding-top: 22px;
+  border-top: 1px solid var(--rule);
 }
 .section > h2 {
   margin: 0;
@@ -83,22 +85,22 @@ strong { font-weight: 600; }
   padding-top: 1px;
 }
 @media (max-width: 720px) {
-  .section { grid-template-columns: minmax(0, 1fr); margin-top: 44px; }
+  .section { grid-template-columns: minmax(0, 1fr); margin-top: 32px; padding-top: 20px; }
   .section > h2 { margin-bottom: 12px; color: var(--ink); font-weight: 600; }
 }
 
-.prose { max-width: 60ch; }
+.prose { max-width: 60ch; text-wrap: pretty; }
 .prose p { margin: 0 0 1em; }
 .prose h3 { font-family: var(--serif); font-size: 17px; font-weight: 600; margin: 1.4em 0 0.4em; }
-.prose ul { margin: 0 0 1em; padding-left: 1.1em; }
-.prose li { margin-bottom: 0.5em; padding-left: 0.2em; }
-.prose li::marker { color: var(--slate); }
+.prose ul { margin: 0 0 1em; padding-left: 1.2em; list-style: none; }
+.prose li { margin-bottom: 0.55em; position: relative; }
+.prose li::before { content: '–'; position: absolute; left: -1.2em; color: var(--slate); }
 .prose a { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .prose a:hover { color: var(--accent); text-decoration-color: currentColor; }
 
 /* News */
 .news { list-style: none; margin: 0; padding: 0; max-width: 62ch; }
-.news li { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 16px; margin-bottom: 10px; }
+.news li { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 16px; margin-bottom: 12px; text-wrap: pretty; }
 .news time {
   font-family: var(--sans); font-size: 13.5px; color: var(--slate);
   font-variant-numeric: tabular-nums; padding-top: 2px; white-space: nowrap;
@@ -108,7 +110,7 @@ strong { font-weight: 600; }
 .papers { list-style: none; margin: 0; padding: 0; }
 
 .foot {
-  margin-top: 72px; padding-top: 18px; border-top: 1px solid var(--rule);
+  margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--rule);
   font-family: var(--sans); font-size: 12.5px; color: var(--slate);
   display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
 }
