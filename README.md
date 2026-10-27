@@ -23,26 +23,26 @@ npm run build      # outputs dist/
 
 ### Add a publication
 
-Create `src/content/publications/2026-spongecore.md`:
+Each paper renders through `src/components/Paper.astro` as three lines: title, authors (your name in bold), then the venue followed by links. Create `src/content/publications/2026-spongecore.md`:
 
 ```md
 ---
 title: "SpongeCore: A Porous Media Benchmark for ..."
-authors: "**Chunyang Wang**, Coauthor Name"
-venue: "NeurIPS Datasets and Benchmarks Track"
-year: 2026
-date: 2026-05-15        # optional, orders papers within a year
-image: /img/spongecore.webp
+url: https://arxiv.org/abs/xxxx.xxxxx   # intro page; title, figure and venue link here
+authors: [Chunyang Wang, Coauthor Name*]   # "*" marks equal contribution
+venue: NeurIPS 2026                      # short, well-known name + year
+venueUrl: https://...                    # optional, defaults to url
+date: 2026-05-15                         # sorts newest first
+image: /img/pub-spongecore.webp
+highlight: Spotlight Presentation        # optional
 links:
-  pdf: https://arxiv.org/abs/...
-  code: https://github.com/...
-  page: https://...
-notes: Spotlight
+  - { label: Paper, url: "https://arxiv.org/pdf/xxxx.xxxxx" }
+  - { label: Code, url: "https://github.com/..." }
+  - { label: Hugging Face, url: "https://huggingface.co/..." }
 ---
-Optional one-line note rendered under the entry.
 ```
 
-Fields are validated by the schema in `src/content.config.ts`. Entries sort by date (or year if no date), newest first. Keep figures around 800px wide in WebP: `cwebp -q 82 -resize 800 0 fig.png -o public/img/pub-name.webp`.
+Fields are validated by `src/content.config.ts`. The component takes plain props, so other pages can use it directly with `<Paper title="..." url="..." authors={[...]} venue="..." />`. Keep figures around 800px wide in WebP: `cwebp -q 82 -resize 800 0 fig.png -o public/img/pub-name.webp`.
 
 ### Add a news item
 

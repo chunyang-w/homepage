@@ -91,23 +91,7 @@ main li { margin-bottom: 6px; }
 .news li { display: grid; grid-template-columns: 6em 1fr; gap: 12px; margin-bottom: 8px; }
 .news time { color: var(--muted); font-family: var(--sans); font-size: 0.85rem; padding-top: 3px; white-space: nowrap; }
 
-/* Publications */
-.pubs { list-style: none; padding: 0; margin: 0; }
-.pub { display: grid; grid-template-columns: 200px 1fr; gap: 20px; margin-bottom: 26px; }
-@media (max-width: 520px) { .pub { grid-template-columns: 1fr; gap: 10px; } }
-.pub .thumb { border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: #fff; }
-.pub .thumb img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; padding: 4px; }
-.pub .title { font-weight: 600; line-height: 1.35; }
-.pub .title a { color: inherit; }
-.pub .authors { margin-top: 2px; }
-.pub .venue { color: var(--muted); font-style: italic; margin-top: 2px; }
-.pub .actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.pub .actions a {
-  font-family: var(--sans); font-size: 0.75rem; padding: 2px 8px; border: 1px solid var(--rule);
-  border-radius: 4px; color: var(--fg);
-}
-.pub .actions a:hover { background: var(--accent-soft); border-color: var(--accent); text-decoration: none; }
-.pub .notes { color: #c0392b; font-weight: 600; font-family: var(--sans); font-size: 0.8rem; }
-.pub .body { margin-top: 6px; font-size: 0.92rem; color: var(--muted); }
+/* Publications: row styles live in components/Paper.astro */
+.papers { list-style: none; padding: 0; margin: 0; }
 
 footer { grid-column: 1 / -1; margin-top: 48px; color: var(--muted); font-family: var(--sans); font-size: 0.75rem; }

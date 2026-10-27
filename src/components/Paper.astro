@@ -1,0 +1,64 @@
+---
+// One paper row: figure | title / authors / venue + links.
+// Plain props, so it works with a content collection or hand-written data on any page.
+import { site } from '../data/site';
+
+export interface PaperLink { label: string; url: string }
+export interface Props {
+  title: string;
+  url: string; // intro page: project page, journal page, or arXiv abstract
+  authors: string[]; // append "*" for equal contribution
+  venue: string; // short and well known: "NeurIPS 2024", "Physics of Fluids 2025", "arXiv 2026"
+  venueUrl?: string; // defaults to url
+  links?: PaperLink[]; // "Paper", "arXiv", "Code", "Hugging Face", ...
+  image?: string;
+  highlight?: string; // "Spotlight Presentation", "Oral", ...
+  me?: string; // author name to highlight
+}
+
+const { title, url, authors, venue, venueUrl = url, links = [], image, highlight, me = site.name } = Astro.props;
+const ext = (href: string) => (href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {});
+---
+<li class="paper">
+  {image && (
+    <a class="paper-fig" href={url} {...ext(url)} tabindex="-1" aria-hidden="true">
+      <img src={image} alt="" loading="lazy" />
+    </a>
+  )}
+  <div class="paper-text">
+    <a class="paper-title" href={url} {...ext(url)}>{title}</a>
+    <div class="paper-authors">
+      {authors.map((a, i) => (
+        <Fragment>
+          {a.replace(/\*$/, '') === me ? <strong>{a}</strong> : a}
+          {i < authors.length - 1 && ', '}
+        </Fragment>
+      ))}
+    </div>
+    <div class="paper-links">
+      <a class="paper-venue" href={venueUrl} {...ext(venueUrl)}>{venue}</a>
+      {links.map((l) => (
+        <Fragment>
+          <span class="sep">/</span>
+          <a href={l.url} {...ext(l.url)}>{l.label}</a>
+        </Fragment>
+      ))}
+    </div>
+    {highlight && <div class="paper-highlight">{highlight}</div>}
+  </div>
+</li>
+
+<style>
+  .paper { display: grid; grid-template-columns: 200px 1fr; gap: 24px; align-items: center; margin-bottom: 28px; }
+  @media (max-width: 520px) { .paper { grid-template-columns: 1fr; gap: 10px; } }
+  .paper-fig { display: block; border-radius: 4px; overflow: hidden; background: #fff; }
+  .paper-fig img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; }
+  .paper-text { line-height: 1.5; }
+  .paper-title { display: block; font-weight: 600; color: var(--fg); line-height: 1.35; margin-bottom: 4px; }
+  .paper-authors { color: var(--muted); font-size: 0.95rem; }
+  .paper-authors strong { color: var(--fg); font-weight: 600; }
+  .paper-links { margin-top: 4px; font-size: 0.95rem; }
+  .paper-venue { font-weight: 600; color: var(--fg); }
+  .paper-links .sep { color: var(--muted); margin: 0 6px; }
+  .paper-highlight { margin-top: 4px; color: #c0392b; font-style: italic; font-size: 0.9rem; }
+</style>
