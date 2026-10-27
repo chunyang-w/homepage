@@ -1,86 +1,131 @@
 ---
-// Learning multiphase flow, interactively. The top row is the physics (invasion percolation);
-// the bottom row is a small neural network the visitor trains in the browser on a different
-// rock, then uses to predict the flow here. Physics and model live in src/lib/porous.ts.
-import { FEATURES, HIDDEN } from '../lib/porous';
+// "My research in a nutshell": an easter egg in the header.
+//
+// Closed, it is just the simulation strip: drainage in a 2D rock by invasion percolation.
+// Clicking the strip opens a small lab. The visitor trains a neural network in the browser,
+// 40 mini-batch steps at a time, and after each round the network predicts the flow in this rock,
+// so the prediction visibly improves. Physics lives in src/lib/porous.ts, the network in src/lib/learn.ts.
+import { FEATURES } from '../lib/learn';
 
 interface Props { rowHeight?: number; seed?: number }
 const { rowHeight = 60, seed = 11 } = Astro.props;
 
-// Network diagram geometry (SVG user units).
-const VW = 320, VH = 156;
-const xIn = 96, xHid = 196, xOut = 264;
-const spread = (n: number, top: number, bottom: number) => Array.from({ length: n }, (_, i) => top + ((bottom - top) * (i + 0.5)) / n);
-const yIn = spread(FEATURES.length, 6, VH - 6);
-const yHid = spread(HIDDEN, 4, VH - 4);
-const yOut = VH / 2;
+const LAYERS = [FEATURES.length, 24, 16, 1];
+const MAX_STEPS = 800, CHUNK = 40; // mini-batch training steps
 
-// Loss chart geometry.
-const CW = 320, CH = 156, PL = 30, PR = 8, PT = 10, PB = 26;
-const EPOCHS = 60, YMAX = 0.8;
-const cx = (e: number) => PL + ((CW - PL - PR) * e) / EPOCHS;
-const cy = (l: number) => PT + (CH - PT - PB) * (1 - Math.min(l, YMAX) / YMAX);
+// Network diagram geometry (SVG units).
+const DW = 380, DH = 200;
+const xs = [120, 204, 282, 336];
+const spread = (n: number, top: number, bottom: number) => Array.from({ length: n }, (_, i) => top + ((bottom - top) * (i + 0.5)) / n);
+const ys = [spread(LAYERS[0], 6, DH - 6), spread(LAYERS[1], 4, DH - 4), spread(LAYERS[2], 14, DH - 14), [DH / 2]];
+
+// Chart geometry, shared by the loss and overlap charts.
+const CW = 320, PL = 32, PR = 10;
+const LH = 118, LT = 8, LB = 18; // loss chart
+const OH = 64, OT = 8, OB = 22; // overlap chart
+const cx = (e: number) => PL + ((CW - PL - PR) * e) / MAX_STEPS;
+const ly = (v: number) => LT + (LH - LT - LB) * (1 - Math.min(v, 0.8) / 0.8);
+const oy = (v: number) => OT + (OH - OT - OB) * (1 - v);
 ---
-<figure class="core-figure" data-seed={seed} data-epochs={EPOCHS} style={`--row:${rowHeight}px`}>
-  <div class="rows">
-    <div class="row"><canvas class="sim" aria-hidden="true"></canvas><span class="tag">Simulation</span></div>
-    <div class="row"><canvas class="net" aria-hidden="true"></canvas><span class="tag net-tag">Neural network, untrained</span></div>
+<figure class="nutshell" data-seed={seed} data-layers={LAYERS.join(',')} data-max={MAX_STEPS} data-chunk={CHUNK} data-geom={JSON.stringify({ DW, DH, xs, ys })} style={`--row:${rowHeight}px`}>
+  <div class="reveal" data-part="head" inert>
+    <div>
+      <header class="lab-head">
+        <h2 id="nutshell-title">My research in a nutshell</h2>
+        <button type="button" class="close" aria-label="Close">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+        </button>
+      </header>
+      <p class="lab-lead">I train neural networks on simulations of multiphase flow, so they can predict flow in rock they have never seen. This is a pocket-sized version: train the network on a simulated rock, then compare its prediction for this one with the simulation.</p>
+    </div>
+  </div>
+
+  <div class="row sim-row">
+    <canvas class="sim" aria-hidden="true"></canvas>
+    <span class="tag">Simulation</span>
+    <button type="button" class="opener" aria-expanded="false" aria-controls="nutshell-lab" aria-label="Open my research in a nutshell">
+      <span class="hint">Click to look inside</span>
+    </button>
+  </div>
+
+  <div class="reveal" data-part="body" id="nutshell-lab" role="region" aria-labelledby="nutshell-title" inert>
+    <div>
+      <div class="row net-row">
+        <canvas class="net" aria-hidden="true"></canvas>
+        <span class="tag net-tag">Neural network</span>
+      </div>
+    </div>
   </div>
 
   <figcaption>
     <span class="key"><i class="sw grain"></i>grains</span>
     <span class="key"><i class="sw water"></i>water</span>
     <span class="key"><i class="sw fluid"></i>invading fluid</span>
-    <span class="lead">Train a small network on drainage in one rock, then let it predict the flow in this one.</span>
+    <span class="caption-text">Drainage simulated by invasion percolation.</span>
   </figcaption>
 
-  <div class="lab">
-    <div class="panel">
-      <svg class="diagram" viewBox={`0 0 ${VW} ${VH}`} role="img" aria-label={`Neural network with ${FEATURES.length} inputs, ${HIDDEN} hidden units and one output`}>
-        <g class="edges">
-          {FEATURES.map((_, f) => yHid.map((y, k) => (
-            <line class="edge" data-f={f} data-k={k} x1={xIn} y1={yIn[f]} x2={xHid} y2={y} />
-          )))}
-          {yHid.map((y, k) => <line class="edge" data-k={k} data-out x1={xHid} y1={y} x2={xOut} y2={yOut} />)}
-        </g>
-        {FEATURES.map((name, f) => (
-          <g class="input">
-            <text x={xIn - 10} y={yIn[f]} text-anchor="end" dominant-baseline="central">{name}</text>
-            <circle cx={xIn} cy={yIn[f]} r="4.5" />
-          </g>
-        ))}
-        {yHid.map((y) => <circle class="hidden" cx={xHid} cy={y} r="4" />)}
-        <circle class="output" cx={xOut} cy={yOut} r="6" />
-        <text class="out-label" x={xOut + 12} y={yOut - 6} dominant-baseline="central">Fills</text>
-        <text class="out-label" x={xOut + 12} y={yOut + 7} dominant-baseline="central">next</text>
-      </svg>
-      <p class="panel-note">Weights: <span class="pos"></span>positive <span class="neg"></span>negative, thicker is stronger</p>
-    </div>
+  <div class="reveal" data-part="lab" inert>
+    <div>
+      <div class="lab">
+        <div class="panel">
+          <div class="diagram-wrap">
+          <canvas class="edges" aria-hidden="true"></canvas>
+          <svg class="diagram" viewBox={`0 0 ${DW} ${DH}`} role="img" aria-label={`Neural network: ${LAYERS[0]} inputs, hidden layers of ${LAYERS[1]} and ${LAYERS[2]} units, one output`}>
+            {FEATURES.map((name, j) => (
+              <g class="input">
+                <text x={xs[0] - 9} y={ys[0][j]} text-anchor="end" dominant-baseline="central">{name}</text>
+                <circle cx={xs[0]} cy={ys[0][j]} r="4" />
+              </g>
+            ))}
+            {ys[1].map((y) => <circle class="unit" cx={xs[1]} cy={y} r="3" />)}
+            {ys[2].map((y) => <circle class="unit" cx={xs[2]} cy={y} r="3.2" />)}
+            <circle class="output" cx={xs[3]} cy={ys[3][0]} r="6" />
+            <text class="out-label" x={xs[3] + 12} y={ys[3][0] - 7} dominant-baseline="central">Fills</text>
+            <text class="out-label" x={xs[3] + 12} y={ys[3][0] + 7} dominant-baseline="central">next</text>
+          </svg>
+          </div>
+          <p class="note">Weights: <i class="ln pos"></i>positive <i class="ln neg"></i>negative, thicker is stronger. <span class="params"></span></p>
+        </div>
 
-    <div class="panel">
-      <svg class="chart" viewBox={`0 0 ${CW} ${CH}`} role="img" aria-label="Training and validation loss by epoch">
-        {[0, 0.2, 0.4, 0.6, 0.8].map((l) => (
-          <g class="grid"><line x1={PL} x2={CW - PR} y1={cy(l)} y2={cy(l)} /><text x={PL - 6} y={cy(l)} text-anchor="end" dominant-baseline="central">{l.toFixed(1)}</text></g>
-        ))}
-        {[0, 20, 40, 60].map((e) => <text class="tick" x={cx(e)} y={CH - PB + 14} text-anchor="middle">{e}</text>)}
-        <text class="axis" x={CW - PR} y={CH - 2} text-anchor="end">epoch</text>
-        <polyline class="val" points="" />
-        <polyline class="train" points="" />
-      </svg>
-      <p class="panel-note">Loss: <span class="l-train"></span>training <span class="l-val"></span>validation, on a held-out fifth</p>
+        <div class="panel">
+          <svg class="chart loss" viewBox={`0 0 ${CW} ${LH}`} role="img" aria-label="Training and validation loss by step">
+            {[0, 0.2, 0.4, 0.6, 0.8].map((v) => <g class="grid"><line x1={PL} x2={CW - PR} y1={ly(v)} y2={ly(v)} /><text x={PL - 6} y={ly(v)} text-anchor="end" dominant-baseline="central">{v.toFixed(1)}</text></g>)}
+            <polyline class="val" points="" />
+            <polyline class="train" points="" />
+          </svg>
+          <p class="note"><i class="ln pos"></i>training loss <i class="ln neg"></i>validation loss, on a held-out fifth</p>
+          <svg class="chart overlap" viewBox={`0 0 ${CW} ${OH}`} role="img" aria-label="Overlap between prediction and simulation by step">
+            {[0, 0.5, 1].map((v) => <g class="grid"><line x1={PL} x2={CW - PR} y1={oy(v)} y2={oy(v)} /><text x={PL - 6} y={oy(v)} text-anchor="end" dominant-baseline="central">{Math.round(v * 100)}%</text></g>)}
+            {[0, 200, 400, 600, 800].map((e) => <text class="tick" x={cx(e)} y={OH - 6} text-anchor="middle">{e}</text>)}
+            <text class="tick" x={CW - PR} y={OH + 6} text-anchor="end">training steps</text>
+            <polyline class="ovl" points="" />
+            <g class="dots"></g>
+          </svg>
+          <p class="note"><i class="dot"></i>prediction overlap with the simulation in this rock</p>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button type="button" class="btn primary" data-act="train">Train {CHUNK} steps</button>
+        <button type="button" class="btn" data-act="play">Watch side by side</button>
+        <button type="button" class="btn quiet" data-act="rock">New rock</button>
+        <button type="button" class="btn quiet" data-act="reset">Reset</button>
+        <p class="status" aria-live="polite"></p>
+      </div>
     </div>
   </div>
 
-  <div class="controls">
-    <button type="button" class="btn primary" data-act="train">Train network</button>
-    <button type="button" class="btn" data-act="predict" disabled>Predict</button>
-    <button type="button" class="btn quiet" data-act="rock">New rock</button>
-    <p class="status" aria-live="polite">Untrained. Training uses drainage simulated in a different rock.</p>
+  <div class="toast" role="status" aria-live="polite" hidden>
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l1.7 4 4.3.4-3.3 2.8 1 4.2L8 10.7 4.3 12.9l1-4.2L2 5.9l4.3-.4z" /></svg>
+    You found an easter egg. Here is my research in a nutshell.
   </div>
 </figure>
 
 <script>
-  import { SCALE, INLET, makeRock, simulator, datasetSteps, network, rollout, saturation, NF, type Rock, type Network, type Dataset } from '../lib/porous';
+  import { SCALE, makeRock, simulator, saturation, type Rock } from '../lib/porous';
+  import { NF, trainingData, network, rollout, overlap, type Network, type Dataset } from '../lib/learn';
+
+  const FOUND_KEY = 'nutshell-found';
 
   function rgb(cs: CSSStyleDeclaration, name: string, fallback: string): number[] {
     return (cs.getPropertyValue(name) || fallback).match(/\d+(\.\d+)?/g)!.map(Number);
@@ -111,142 +156,364 @@ const cy = (l: number) => PT + (CH - PT - PB) * (1 - Math.min(l, YMAX) / YMAX);
     };
   }
 
+  // A short burst of ribbons from the strip, in the site's colours.
+  function ribbons(from: DOMRect) {
+    // Draw only in a band around the strip, at modest resolution: far fewer pixels per frame.
+    const c = document.createElement('canvas');
+    c.setAttribute('aria-hidden', 'true');
+    const bandTop = Math.max(0, from.top - 360), bandH = Math.min(innerHeight - bandTop, 600), bandW = innerWidth;
+    c.style.cssText = `position:fixed;left:0;top:${bandTop}px;width:${bandW}px;height:${bandH}px;pointer-events:none;z-index:60`;
+    document.body.appendChild(c);
+    const dpr = Math.min(devicePixelRatio || 1, 1.5);
+    c.width = Math.round(bandW * dpr); c.height = Math.round(bandH * dpr);
+    const ctx = c.getContext('2d')!;
+    ctx.scale(dpr, dpr);
+    ctx.translate(0, -bandTop);
+    const cs = getComputedStyle(document.documentElement);
+    const ph = rgb(cs, '--phase-rgb', '36,48,200'), gr = rgb(cs, '--grain-rgb', '196,200,208'), ink = rgb(cs, '--ink-rgb', '22,24,29');
+    const mix = (a: number[], t: number) => `rgb(${a.map((v) => Math.round(v + (255 - v) * t)).join(',')})`;
+    const palette = [mix(ph, 0), mix(ph, 0.35), mix(ph, 0.6), mix(gr, 0), mix(ink, 0.55)];
+    const pieces = Array.from({ length: 90 }, () => {
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.6;
+      const speed = 6 + Math.random() * 6.5;
+      return {
+        x: from.left + Math.random() * from.width, y: from.top + from.height * 0.5,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        len: 14 + Math.random() * 18, wid: 3 + Math.random() * 3,
+        rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.25,
+        flip: Math.random() * Math.PI, vf: 0.12 + Math.random() * 0.2,
+        wave: Math.random() * Math.PI, color: palette[(Math.random() * palette.length) | 0],
+      };
+    });
+    let frame = 0;
+    const LIFE = 150;
+    const tick = () => {
+      frame++;
+      ctx.clearRect(0, bandTop, bandW, bandH);
+      ctx.globalAlpha = frame > LIFE - 40 ? Math.max(0, (LIFE - frame) / 40) : 1;
+      for (const r of pieces) {
+        r.vy += 0.22; r.vx *= 0.985; r.vy *= 0.985;
+        r.x += r.vx + Math.sin(r.wave + frame * 0.08) * 0.6; r.y += r.vy;
+        r.rot += r.vr; r.flip += r.vf;
+        ctx.save();
+        ctx.translate(r.x, r.y); ctx.rotate(r.rot); ctx.scale(1, Math.cos(r.flip));
+        ctx.strokeStyle = r.color; ctx.lineWidth = r.wid; ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-r.len / 2, 0);
+        ctx.quadraticCurveTo(0, Math.sin(r.wave + frame * 0.15) * 7, r.len / 2, 0);
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (frame < LIFE) requestAnimationFrame(tick); else c.remove();
+    };
+    requestAnimationFrame(tick);
+  }
+
   function setup(fig: HTMLElement) {
     const $ = <T extends Element>(s: string) => fig.querySelector<T>(s)!;
     const simCanvas = $<HTMLCanvasElement>('canvas.sim'), netCanvas = $<HTMLCanvasElement>('canvas.net');
-    const netTag = $<HTMLElement>('.net-tag'), status = $<HTMLElement>('.status');
-    const btn = { train: $<HTMLButtonElement>('[data-act=train]'), predict: $<HTMLButtonElement>('[data-act=predict]'), rock: $<HTMLButtonElement>('[data-act=rock]') };
-    const edges = [...fig.querySelectorAll<SVGLineElement>('.edge')];
+    const opener = $<HTMLButtonElement>('.opener'), closer = $<HTMLButtonElement>('.close');
+    const parts = [...fig.querySelectorAll<HTMLElement>('.reveal')];
+    const status = $<HTMLElement>('.status'), netTag = $<HTMLElement>('.net-tag'), toast = $<HTMLElement>('.toast');
+    const captionText = $<HTMLElement>('.caption-text');
+    const btn = {
+      train: $<HTMLButtonElement>('[data-act=train]'), play: $<HTMLButtonElement>('[data-act=play]'),
+      rock: $<HTMLButtonElement>('[data-act=rock]'), reset: $<HTMLButtonElement>('[data-act=reset]'),
+    };
+    const edgeCanvas = $<HTMLCanvasElement>('canvas.edges'), edgeCtx = edgeCanvas.getContext('2d')!;
+    const geom = JSON.parse(fig.dataset.geom!) as { DW: number; DH: number; xs: number[]; ys: number[][] };
     const trainLine = $<SVGPolylineElement>('polyline.train'), valLine = $<SVGPolylineElement>('polyline.val');
-    const EPOCHS = Number(fig.dataset.epochs);
+    const ovlLine = $<SVGPolylineElement>('polyline.ovl'), dots = $<SVGGElement>('g.dots');
+    const LAYERS = fig.dataset.layers!.split(',').map(Number), MAX = +fig.dataset.max!, CHUNK = +fig.dataset.chunk!;
     const reduce = matchMedia('(prefers-reduced-motion: reduce)');
-    const chart = { PL: 30, PR: 8, PT: 10, PB: 26, W: 320, H: 156, YMAX: 0.8 };
-    const cx = (e: number) => chart.PL + ((chart.W - chart.PL - chart.PR) * e) / EPOCHS;
-    const cy = (l: number) => chart.PT + (chart.H - chart.PT - chart.PB) * (1 - Math.min(l, chart.YMAX) / chart.YMAX);
 
-    let rockSeed = Number(fig.dataset.seed), netSeed = 1;
+    // Chart scales (must match the frontmatter).
+    const CW = 320, PL = 32, PR = 10, LH = 118, LT = 8, LB = 18, OH = 64, OT = 8, OB = 22;
+    const cx = (e: number) => PL + ((CW - PL - PR) * e) / MAX;
+    const ly = (v: number) => LT + (LH - LT - LB) * (1 - Math.min(v, 0.8) / 0.8);
+    const oy = (v: number) => OT + (OH - OT - OB) * (1 - v);
+
+    let rockSeed = +fig.dataset.seed!, netSeed = 1;
     let rock: Rock, paintSim: (s: Uint8Array) => void, paintNet: (s: Uint8Array) => void;
-    let simState: Uint8Array, netState: Uint8Array;
-    let net: Network = network(netSeed), rate = 0, trained = false, busy = false, raf = 0, replay = 0;
+    let simState: Uint8Array, netState: Uint8Array, truth: Uint8Array | null = null, truthSteps = 0;
+    let open = false, busy = false, replay = 0, work = 0;
+    let data: Dataset | null = null, dataW = 0, net: Network | null = null, steps = 0, cursor = 0;
+    let Xtr: Float32Array, Ytr: Uint8Array, Xva: Float32Array, Yva: Uint8Array;
+    let lossTr: [number, number][] = [], lossVa: [number, number][] = [], ovl: [number, number][] = [];
 
-    const setBusy = (b: boolean) => { busy = b; btn.train.disabled = b; btn.rock.disabled = b; btn.predict.disabled = b || !trained; };
-    const emphasise = (which: 'train' | 'predict') => { btn.train.classList.toggle('primary', which === 'train'); btn.predict.classList.toggle('primary', which === 'predict'); };
-    const redraw = () => { if (rock) { paintSim(simState); paintNet(netState); } };
+    const redraw = () => { if (rock) { paintSim(simState); if (open) { paintNet(netState); drawNetwork(); } } };
+    const setBusy = (b: boolean) => {
+      busy = b;
+      btn.train.disabled = b || steps >= MAX; btn.play.disabled = b; btn.rock.disabled = b; btn.reset.disabled = b;
+    };
+    const pct = (v: number) => `${Math.round(v * 100)}%`;
+    const lastOverlap = () => ovl.find(([e]) => e === steps)?.[1] ?? 0;
+    const netLabel = () => (steps ? `Neural network, ${steps} steps` : 'Neural network, untrained');
 
-    function drawNetwork() {
-      for (const e of edges) {
-        const k = Number(e.dataset.k);
-        const w = e.dataset.out !== undefined ? net.outWeight(k) : net.inWeight(Number(e.dataset.f), k);
-        const a = Math.min(Math.abs(w), 3);
-        e.setAttribute('stroke-width', (0.4 + a * 0.9).toFixed(2));
-        e.style.setProperty('--o', (0.25 + a * 0.25).toFixed(2));
-        e.classList.toggle('neg', w < 0);
-      }
-    }
+    // ---- Rock and physics ----
 
-    // Load a rock: draw it dry in both rows and play the physics in the top row.
     function loadRock() {
-      cancelAnimationFrame(raf); cancelAnimationFrame(replay);
+      cancelAnimationFrame(replay);
       const W = Math.round(simCanvas.clientWidth * SCALE), H = Math.round(simCanvas.clientHeight * SCALE);
       rock = makeRock(W, H, rockSeed);
       paintSim = painter(simCanvas, rock, true); paintNet = painter(netCanvas, rock, false);
       const sim = simulator(rock);
       simState = sim.state; netState = sim.state.slice();
-      redraw();
-      if (reduce.matches) { while (sim.step()); redraw(); return; }
+      truth = null;
+      return sim;
+    }
+
+    // Closed: play the physics once.
+    function playPhysics() {
+      const sim = loadRock();
+      paintSim(simState);
+      if (reduce.matches) { while (sim.step()); paintSim(simState); return; }
       const tick = () => { const more = sim.step(); paintSim(simState); if (more) replay = requestAnimationFrame(tick); };
       replay = requestAnimationFrame(tick);
     }
 
-    function train() {
-      cancelAnimationFrame(raf);
+    // Open: show the simulation's final state, which the prediction is compared against.
+    function settleTruth() {
+      if (truth) return;
+      cancelAnimationFrame(replay);
+      const sim = simulator(rock);
+      while (sim.step());
+      truth = sim.state; truthSteps = sim.frame; simState = truth;
+      paintSim(simState);
+    }
+
+    // The same, spread over frames so opening the lab never stalls the page.
+    function settleTruthSliced(then: () => void) {
+      if (truth) { then(); return; }
+      cancelAnimationFrame(replay);
+      const sim = simulator(rock);
+      const slice = () => {
+        const t0 = performance.now();
+        let more = true;
+        while ((more = sim.step()) && performance.now() - t0 < 8);
+        if (more) { work = requestAnimationFrame(slice); return; }
+        truth = sim.state; truthSteps = sim.frame; simState = truth;
+        paintSim(simState);
+        then();
+      };
+      work = requestAnimationFrame(slice);
+    }
+
+    // ---- Network and charts ----
+
+    // Connections are drawn on a canvas under the SVG: hundreds of styled SVG lines are slow to repaint.
+    function drawNetwork() {
+      const box = edgeCanvas.getBoundingClientRect();
+      if (!box.width) return;
+      const dpr = Math.min(devicePixelRatio || 1, 2);
+      const w = Math.round(box.width * dpr), h = Math.round(box.height * dpr);
+      if (edgeCanvas.width !== w || edgeCanvas.height !== h) { edgeCanvas.width = w; edgeCanvas.height = h; }
+      const k0 = w / geom.DW;
+      edgeCtx.setTransform(k0, 0, 0, k0, 0, 0);
+      edgeCtx.clearRect(0, 0, geom.DW, geom.DH);
+      if (!net) return;
+      const cs = getComputedStyle(edgeCanvas);
+      const pos = `rgb(${rgb(cs, '--phase-rgb', '36,48,200').join(',')})`, neg = cs.getPropertyValue('--slate').trim() || '#666c76';
+      edgeCtx.lineCap = 'round';
+      for (let l = 0; l < LAYERS.length - 1; l++) {
+        for (let j = 0; j < LAYERS[l]; j++) for (let k = 0; k < LAYERS[l + 1]; k++) {
+          const wt = net.weight(l, j, k), a = Math.min(Math.abs(wt), 2.5);
+          edgeCtx.globalAlpha = (0.12 + a * 0.3) * (wt < 0 ? 0.7 : 1);
+          edgeCtx.strokeStyle = wt < 0 ? neg : pos;
+          edgeCtx.lineWidth = 0.25 + a * 0.75;
+          edgeCtx.setLineDash(wt < 0 ? [2, 2.5] : []);
+          edgeCtx.beginPath();
+          edgeCtx.moveTo(geom.xs[l], geom.ys[l][j]);
+          edgeCtx.lineTo(geom.xs[l + 1], geom.ys[l + 1][k]);
+          edgeCtx.stroke();
+        }
+      }
+      edgeCtx.globalAlpha = 1; edgeCtx.setLineDash([]);
+    }
+    new ResizeObserver(() => drawNetwork()).observe(edgeCanvas);
+
+    function drawCharts() {
+      const pts = (a: [number, number][], y: (v: number) => number) => a.map(([e, v]) => `${cx(e).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+      trainLine.setAttribute('points', pts(lossTr, ly));
+      valLine.setAttribute('points', pts(lossVa, ly));
+      ovlLine.setAttribute('points', pts(ovl, oy));
+      dots.innerHTML = ovl.map(([e, v]) => `<circle cx="${cx(e).toFixed(1)}" cy="${oy(v).toFixed(1)}" r="2.6"></circle>`).join('');
+    }
+
+    const recordLoss = () => {
+      lossTr.push([steps, net!.loss(Xtr, Ytr)]);
+      lossVa.push([steps, net!.loss(Xva, Yva)]);
+    };
+
+    function newNetwork() {
+      netSeed++;
+      net = network(LAYERS, netSeed); steps = 0; cursor = 0;
+      lossTr = []; lossVa = []; ovl = [];
+      $<HTMLElement>('.params').textContent = `${net.params.toLocaleString()} parameters.`;
+      recordLoss(); drawNetwork(); drawCharts();
+      btn.train.textContent = `Train ${CHUNK} steps`;
+    }
+
+    // Generate training data from a separate simulated rock, in slices of a few milliseconds.
+    function prepareData(then: () => void) {
       setBusy(true);
-      netSeed++; net = network(netSeed); trained = false; drawNetwork();
-      trainLine.setAttribute('points', ''); valLine.setAttribute('points', '');
-      netTag.textContent = 'Neural network, training';
       status.textContent = 'Simulating drainage in a training rock…';
-      // Generate the training data in slices of a few milliseconds, so the page never stalls.
-      const trainRock = makeRock(rock.W, rock.H, rockSeed + 1000 + netSeed);
-      const gen = datasetSteps(trainRock, netSeed);
-      const prepare = () => {
+      const gen = trainingData(rock.W, rock.H, rockSeed + 1000, 2);
+      const slice = () => {
         const t0 = performance.now();
         for (;;) {
           const r = gen.next();
-          if (r.done) { startTraining(r.value); return; }
+          if (r.done) {
+            data = r.value; dataW = rock.W;
+            const n = data.Y.length, nTr = Math.floor(n * 0.8);
+            Xtr = data.X.subarray(0, nTr * NF); Ytr = data.Y.subarray(0, nTr);
+            Xva = data.X.subarray(nTr * NF); Yva = data.Y.subarray(nTr);
+            then(); return;
+          }
           if (performance.now() - t0 > 8) { status.textContent = `Simulating drainage in a training rock… ${Math.round(r.value * 100)}%`; break; }
         }
-        raf = requestAnimationFrame(prepare);
+        work = requestAnimationFrame(slice);
       };
-      raf = requestAnimationFrame(prepare);
+      work = requestAnimationFrame(slice);
+    }
 
-      const startTraining = (data: Dataset) => {
-        rate = data.rate;
-        const n = data.Y.length, nTr = Math.floor(n * 0.8);
-        const Xtr = data.X.subarray(0, nTr * NF), Ytr = data.Y.subarray(0, nTr);
-        const Xva = data.X.subarray(nTr * NF), Yva = data.Y.subarray(nTr);
-        const tr: string[] = [], va: string[] = [];
-        tr.push(`${cx(0).toFixed(1)},${cy(net.loss(Xtr, Ytr)).toFixed(1)}`);
-        va.push(`${cx(0).toFixed(1)},${cy(net.loss(Xva, Yva)).toFixed(1)}`);
-        let e = 0;
-        const finish = () => {
-          trained = true; setBusy(false); emphasise('predict');
-          netTag.textContent = 'Neural network, trained';
-          btn.train.textContent = 'Retrain';
-          status.textContent = `Trained on ${nTr.toLocaleString()} examples, validated on ${(n - nTr).toLocaleString()}. Predict the flow in this rock.`;
-        };
-        const tick = () => {
-          const lossTr = net.epoch(Xtr, Ytr); e++;
-          tr.push(`${cx(e).toFixed(1)},${cy(lossTr).toFixed(1)}`);
-          const lossVa = net.loss(Xva, Yva);
-          va.push(`${cx(e).toFixed(1)},${cy(lossVa).toFixed(1)}`);
-          if (!reduce.matches || e === EPOCHS) {
-            trainLine.setAttribute('points', tr.join(' ')); valLine.setAttribute('points', va.join(' '));
-            drawNetwork();
-            status.textContent = `Epoch ${e} of ${EPOCHS}. Training loss ${lossTr.toFixed(3)}, validation ${lossVa.toFixed(3)}.`;
-          }
-          if (e < EPOCHS) { if (reduce.matches) tick(); else raf = requestAnimationFrame(tick); } else finish();
-        };
-        raf = requestAnimationFrame(tick);
+    // Predict the flow in this rock with the current network, fast-forwarding the fill.
+    function preview(then?: () => void) {
+      settleTruth();
+      setBusy(true);
+      netTag.textContent = 'Neural network, predicting';
+      const roll = rollout(rock, net!, data!.rate);
+      netState = roll.state;
+      let t = 0;
+      const finish = () => {
+        const o = overlap(rock, truth!, netState);
+        ovl = ovl.filter(([e]) => e !== steps); ovl.push([steps, o]); ovl.sort((a, b) => a[0] - b[0]);
+        drawCharts(); paintNet(netState);
+        netTag.textContent = netLabel();
+        setBusy(false);
+        then?.();
       };
+      const slice = () => {
+        const t0 = performance.now();
+        while (t < truthSteps && (reduce.matches || performance.now() - t0 < 7)) { roll.step(); t++; }
+        paintNet(netState);
+        if (t < truthSteps) work = requestAnimationFrame(slice); else finish();
+      };
+      work = requestAnimationFrame(slice);
+    }
+
+    function trainChunk() {
+      if (!net || !data || busy) return;
+      setBusy(true);
+      btn.train.textContent = 'Training…';
+      // One step is one mini-batch update. Two steps per frame, so the loss curve visibly draws.
+      const target = Math.min(steps + CHUNK, MAX), BATCH = 64, LR = 0.002, PER_FRAME = 2, RECORD = 10;
+      const slice = () => {
+        for (let i = 0; i < PER_FRAME && steps < target; i++) {
+          net!.batch(Xtr, Ytr, cursor, Math.min(Ytr.length, cursor + BATCH), LR);
+          cursor += BATCH; if (cursor >= Ytr.length) cursor = 0;
+          steps++;
+          if (steps % RECORD === 0) {
+            recordLoss(); drawCharts();
+            const tr = lossTr[lossTr.length - 1][1], va = lossVa[lossVa.length - 1][1];
+            status.textContent = `Step ${steps}. Training loss ${tr.toFixed(3)}, validation ${va.toFixed(3)}.`;
+          }
+        }
+        drawNetwork();
+        if (steps < target) { work = requestAnimationFrame(slice); return; }
+        btn.train.textContent = steps >= MAX ? 'Fully trained' : `Train ${CHUNK} more`;
+        preview(() => {
+          const o = lastOverlap(), first = ovl[0]?.[1] ?? o;
+          status.textContent = `Step ${steps}. The prediction overlaps the simulation by ${pct(o)}, from ${pct(first)} untrained.` +
+            (steps >= 400 ? ' Training much longer can overfit, so watch the validation loss.' : '');
+        });
+      };
+      work = requestAnimationFrame(slice);
     }
 
     // Run the physics and the network side by side from a dry rock.
-    function predict() {
-      if (!trained) return;
-      cancelAnimationFrame(raf); cancelAnimationFrame(replay);
+    function watch() {
+      if (!net || !data || busy) return;
+      settleTruth();
       setBusy(true);
-      const sim = simulator(rock), roll = rollout(rock, net, rate);
+      const sim = simulator(rock), roll = rollout(rock, net, data.rate);
       simState = sim.state; netState = roll.state;
       netTag.textContent = 'Neural network, predicting';
-      status.textContent = 'Predicting…';
       const done = () => {
-        let both = 0, either = 0;
-        for (let i = 0; i < simState.length; i++) {
-          if (i % rock.W < INLET) continue;
-          const a = simState[i] === 2, b = netState[i] === 2;
-          if (a && b) both++; if (a || b) either++;
-        }
-        const s = Math.round(saturation(rock, simState) * 100), p = Math.round(saturation(rock, netState) * 100);
-        status.textContent = `Fluid saturation: simulation ${s}%, network ${p}%. ${Math.round((100 * both) / either)}% of filled pore space overlaps.`;
-        netTag.textContent = 'Neural network, prediction';
+        simState = truth!;
+        status.textContent = `Fluid saturation: simulation ${pct(saturation(rock, truth!))}, network ${pct(saturation(rock, netState))}. ${pct(overlap(rock, truth!, netState))} of filled pore space overlaps.`;
+        netTag.textContent = netLabel();
         setBusy(false);
       };
       if (reduce.matches) { while (sim.step()) roll.step(); redraw(); done(); return; }
-      const tick = () => { const more = sim.step(); roll.step(); redraw(); if (more) raf = requestAnimationFrame(tick); else done(); };
-      raf = requestAnimationFrame(tick);
+      const tick = () => { const more = sim.step(); roll.step(); redraw(); if (more) work = requestAnimationFrame(tick); else done(); };
+      work = requestAnimationFrame(tick);
     }
 
-    btn.train.addEventListener('click', train);
-    btn.predict.addEventListener('click', predict);
-    const freshRock = (note: string) => {
-      loadRock();
-      netTag.textContent = trained ? 'Neural network, trained' : 'Neural network, untrained';
-      status.textContent = trained ? `${note} Predict the flow with the same trained network.` : `${note} Train the network to predict its flow.`;
-    };
-    btn.rock.addEventListener('click', () => { rockSeed++; freshRock('New rock.'); });
+    function newRock() {
+      if (busy) return;
+      rockSeed++;
+      setBusy(true);
+      loadRock(); paintSim(simState); paintNet(netState);
+      ovl = [];
+      const after = () => preview(() => {
+        status.textContent = `New rock. The ${steps ? `${steps}-step` : 'untrained'} network overlaps its simulation by ${pct(lastOverlap())}.`;
+      });
+      settleTruthSliced(() => (rock.W !== dataW ? prepareData(after) : after()));
+    }
 
-    drawNetwork();
-    requestAnimationFrame(() => setTimeout(loadRock, 0));
+    // ---- Opening and closing ----
+
+    function setOpen(next: boolean) {
+      open = next;
+      fig.classList.toggle('open', open);
+      opener.setAttribute('aria-expanded', String(open));
+      opener.tabIndex = open ? -1 : 0;
+      for (const p of parts) p.toggleAttribute('inert', !open);
+      captionText.textContent = open ? 'Top: the simulation. Bottom: the network’s prediction for the same rock.' : 'Drainage simulated by invasion percolation.';
+      if (!open) { cancelAnimationFrame(work); setBusy(false); opener.focus({ preventScroll: true }); playPhysics(); return; }
+
+      let first = true;
+      try { first = !sessionStorage.getItem(FOUND_KEY); sessionStorage.setItem(FOUND_KEY, '1'); } catch {}
+      if (first) {
+        if (!reduce.matches) ribbons(simCanvas.getBoundingClientRect());
+        toast.hidden = false;
+        requestAnimationFrame(() => toast.classList.add('show'));
+        setTimeout(() => { toast.classList.remove('show'); setTimeout(() => (toast.hidden = true), 400); }, 3800);
+      }
+      closer.focus({ preventScroll: true });
+      setBusy(true);
+      status.textContent = 'Getting ready…';
+      const ready = () => {
+        if (!net) newNetwork();
+        preview(() => {
+          status.textContent = steps
+            ? `The ${steps}-step network overlaps the simulation by ${pct(lastOverlap())}.`
+            : `Untrained, the network overlaps the simulation by ${pct(lastOverlap())}. Train it and watch the overlap climb.`;
+        });
+      };
+      // Start the reveal first; settle the simulation and prepare data in later frames.
+      settleTruthSliced(() => {
+        if (!open) return;
+        paintNet(netState);
+        work = requestAnimationFrame(() => { if (open) (!data || dataW !== rock.W ? prepareData(ready) : ready()); });
+      });
+    }
+
+    opener.addEventListener('click', () => setOpen(true));
+    closer.addEventListener('click', () => setOpen(false));
+    fig.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) setOpen(false); });
+    btn.train.addEventListener('click', trainChunk);
+    btn.play.addEventListener('click', watch);
+    btn.rock.addEventListener('click', newRock);
+    btn.reset.addEventListener('click', () => {
+      if (busy) return;
+      newNetwork();
+      preview(() => { status.textContent = `Reset to fresh random weights. Untrained, the network overlaps the simulation by ${pct(lastOverlap())}.`; });
+    });
+
+    requestAnimationFrame(() => setTimeout(playPhysics, 0));
+
     // Repaint on theme changes, one frame later so the new colours have applied.
     const redrawSoon = () => requestAnimationFrame(redraw);
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redrawSoon);
@@ -254,86 +521,136 @@ const cy = (l: number) => PT + (CH - PT - PB) * (1 - Math.min(l, YMAX) / YMAX);
     let w = simCanvas.clientWidth;
     new ResizeObserver(() => {
       if (busy || Math.abs(simCanvas.clientWidth - w) <= 8) return;
-      w = simCanvas.clientWidth; freshRock('Resized.');
+      w = simCanvas.clientWidth;
+      if (!open) { playPhysics(); return; }
+      loadRock();
+      ovl = [];
+      setBusy(true);
+      settleTruthSliced(() => prepareData(() => preview(() => { status.textContent = `Resized. The network overlaps the simulation by ${pct(lastOverlap())}.`; })));
     }).observe(simCanvas);
   }
 
-  document.querySelectorAll<HTMLElement>('figure.core-figure').forEach(setup);
+  document.querySelectorAll<HTMLElement>('figure.nutshell').forEach(setup);
 </script>
 
 <style>
-  .core-figure { margin: 0; }
-  .rows { display: grid; gap: 4px; }
+  .nutshell { margin: 0; position: relative; }
+
+  /* Collapsible parts: animate height with a 0fr → 1fr grid row. */
+  .reveal {
+    display: grid; grid-template-rows: 0fr; opacity: 0;
+    transition: grid-template-rows 0.55s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.4s ease;
+  }
+  .reveal > div { overflow: hidden; min-height: 0; }
+  .open .reveal { grid-template-rows: 1fr; opacity: 1; }
+  .open .reveal[data-part='lab'] { transition-delay: 0.08s; }
+
+  .lab-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .lab-head h2 {
+    margin: 0;
+    font-family: var(--serif); font-size: 24px; font-weight: 500;
+    font-variation-settings: 'opsz' 36; letter-spacing: -0.01em;
+  }
+  .close {
+    display: grid; place-items: center; width: 28px; height: 28px; padding: 0; flex: none;
+    border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--slate); cursor: pointer;
+  }
+  .close:hover { color: var(--ink); }
+  .close svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+  .lab-lead { margin: 6px 0 16px; max-width: 64ch; color: var(--slate); font-size: 15.5px; line-height: 1.55; text-wrap: pretty; }
+
   .row { position: relative; }
+  .net-row { margin-top: 4px; }
   canvas { display: block; width: 100%; height: var(--row); border-radius: 3px; background: rgb(var(--water-rgb)); }
   .tag {
-    position: absolute; top: 5px; right: 6px;
-    padding: 1px 7px; border-radius: 999px;
+    position: absolute; top: 5px; right: 6px; padding: 1px 7px; border-radius: 999px;
     background: color-mix(in srgb, var(--paper) 86%, transparent);
-    color: var(--ink); font-family: var(--sans); font-size: 11.5px; font-weight: 500;
-    pointer-events: none;
+    color: var(--ink); font-family: var(--sans); font-size: 11.5px; font-weight: 500; pointer-events: none;
   }
 
+  /* While closed, the strip itself is the easter-egg button. */
+  .opener {
+    position: absolute; inset: 0; width: 100%; padding: 0; border: 0; border-radius: 3px;
+    background: transparent; cursor: pointer;
+  }
+  .open .opener { pointer-events: none; }
+  .hint {
+    position: absolute; left: 8px; bottom: 6px; padding: 2px 9px; border-radius: 999px;
+    background: color-mix(in srgb, var(--paper) 90%, transparent); color: var(--ink);
+    font-family: var(--sans); font-size: 11.5px; font-weight: 500;
+    opacity: 0; transform: translateY(3px); transition: opacity 0.2s, transform 0.2s;
+  }
+  .nutshell:not(.open) .opener:hover .hint, .nutshell:not(.open) .opener:focus-visible .hint { opacity: 1; transform: none; }
+  .nutshell:not(.open) .sim-row:hover canvas { filter: brightness(1.03) saturate(1.05); }
+
   figcaption {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px;
-    margin-top: 10px;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-top: 10px;
     font-family: var(--sans); font-size: 12.5px; line-height: 1.5; color: var(--slate);
   }
   .key { white-space: nowrap; }
-  .lead { flex: 1 1 18em; text-wrap: pretty; }
+  .caption-text { flex: 1 1 18em; text-wrap: pretty; }
   .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -0.5px; }
   .sw.grain { background: rgb(var(--grain-rgb)); }
   .sw.water { background: rgb(var(--water-rgb)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 14%, transparent); }
   .sw.fluid { background: rgb(var(--phase-rgb)); }
 
-  /* The lab: network on the left, loss on the right. */
-  .lab {
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
-    margin-top: 16px;
-  }
-  @media (max-width: 640px) { .lab { grid-template-columns: minmax(0, 1fr); } }
+  /* Lab panels. */
+  .lab { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; margin-top: 16px; }
+  @media (max-width: 680px) { .lab { grid-template-columns: minmax(0, 1fr); } }
   .panel {
-    padding: 12px 12px 8px;
-    border: 1px solid var(--rule); border-radius: 6px;
+    padding: 12px 12px 10px; border: 1px solid var(--rule); border-radius: 6px;
     background: color-mix(in srgb, var(--ink) 1.5%, var(--paper));
   }
   svg { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--sans); }
-  .panel-note { margin: 6px 0 0; font-family: var(--sans); font-size: 11.5px; color: var(--slate); }
+  .note { margin: 4px 0 8px; font-family: var(--sans); font-size: 11.5px; color: var(--slate); }
+  .note:last-child { margin-bottom: 0; }
+  .ln { display: inline-block; width: 14px; margin: 0 5px 3px 0; vertical-align: middle; border-top: 2px solid rgb(var(--phase-rgb)); }
+  .ln.neg { border-top: 2px dashed var(--slate); margin-left: 8px; }
+  .dot { display: inline-block; width: 6px; height: 6px; margin: 0 5px 1px 0; border-radius: 50%; background: var(--ink); }
 
-  .diagram text { font-size: 10.5px; fill: var(--slate); }
-  .diagram .out-label { fill: var(--ink); font-weight: 500; }
-  .edge { stroke: rgb(var(--phase-rgb)); stroke-linecap: round; opacity: var(--o, 0.4); transition: stroke-width 0.12s linear, opacity 0.12s linear; }
-  .edge.neg { stroke: var(--slate); stroke-dasharray: 2 2.5; opacity: calc(var(--o, 1) * 0.7); }
-  .input circle, .hidden { fill: var(--paper); stroke: var(--slate); stroke-width: 1.2; }
+  .diagram-wrap { position: relative; }
+  .diagram-wrap canvas.edges { position: absolute; inset: 0; width: 100%; height: 100%; background: none; border-radius: 0; }
+  .diagram { position: relative; }
+  .diagram text { font-size: 10px; fill: var(--slate); }
+  .diagram .out-label { fill: var(--ink); font-weight: 500; font-size: 10.5px; }
+  .input circle, .unit { fill: var(--paper); stroke: var(--slate); stroke-width: 1.1; }
   .output { fill: rgb(var(--phase-rgb)); }
-  .pos, .neg, .l-train, .l-val { display: inline-block; width: 14px; height: 0; margin: 0 5px 3px 0; vertical-align: middle; border-top: 2px solid rgb(var(--phase-rgb)); }
-  .neg { border-top: 2px dashed var(--slate); margin-left: 10px; }
-  .l-val { border-top: 2px dashed var(--slate); margin-left: 10px; }
 
   .chart .grid line { stroke: var(--rule); }
-  .chart text { font-size: 10px; fill: var(--slate); font-variant-numeric: tabular-nums; }
-  .chart .axis { font-size: 10px; }
+  .chart text { font-size: 9.5px; fill: var(--slate); font-variant-numeric: tabular-nums; }
   .chart polyline { fill: none; stroke-linejoin: round; stroke-linecap: round; }
   .chart .train { stroke: rgb(var(--phase-rgb)); stroke-width: 2; }
   .chart .val { stroke: var(--slate); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .chart .ovl { stroke: var(--ink); stroke-width: 1.2; opacity: 0.5; }
+  .chart .dots circle { fill: var(--ink); }
 
-  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 14px; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
   .btn {
-    padding: 6px 14px;
-    border: 1px solid var(--rule); border-radius: 999px;
+    padding: 6px 14px; border: 1px solid var(--rule); border-radius: 999px;
     background: var(--paper); color: var(--ink);
-    font-family: var(--sans); font-size: 13px; font-weight: 500;
-    cursor: pointer;
-    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+    font-family: var(--sans); font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
   }
   .btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--ink) 35%, transparent); }
-  .btn.primary { background: rgb(var(--phase-rgb)); border-color: transparent; color: #fff; }
+  .btn.primary { background: rgb(var(--phase-rgb)); border-color: transparent; color: #fff; min-width: 9.5em; }
   .btn.primary:hover:not(:disabled) { background: color-mix(in srgb, rgb(var(--phase-rgb)) 88%, #000); }
   .btn.quiet { border-color: transparent; color: var(--accent); padding-inline: 6px; }
   .btn:disabled { opacity: 0.45; cursor: default; }
-  .status {
-    flex: 1 1 16em; margin: 0;
-    font-family: var(--sans); font-size: 12.5px; color: var(--slate);
-    font-variant-numeric: tabular-nums; text-wrap: pretty;
+  .status { flex: 1 1 100%; margin: 4px 0 0; font-family: var(--sans); font-size: 12.5px; color: var(--slate); font-variant-numeric: tabular-nums; text-wrap: pretty; min-height: 1.5em; }
+
+  /* The easter-egg prompt. */
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; z-index: 61;
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 16px; border-radius: 999px;
+    background: var(--ink); color: var(--paper);
+    font-family: var(--sans); font-size: 13.5px; font-weight: 500;
+    box-shadow: 0 6px 24px color-mix(in srgb, var(--ink) 25%, transparent);
+    transform: translate(-50%, 16px); opacity: 0;
+    transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s;
+    white-space: nowrap; max-width: calc(100vw - 32px);
   }
+  .toast.show { transform: translate(-50%, 0); opacity: 1; }
+  .toast svg { width: 14px; height: 14px; fill: rgb(var(--phase-rgb)); flex: none; }
+  @media (max-width: 480px) { .toast { white-space: normal; border-radius: 14px; } }
 </style>

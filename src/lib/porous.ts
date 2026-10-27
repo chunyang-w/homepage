@@ -1,16 +1,11 @@
-// Drainage in a 2D porous medium, and a small neural network that learns to predict it.
-//
-// Physics: polydisperse grains on a grid, with a non-wetting fluid invading from the left by
-// invasion percolation. The fluid always enters the widest open pore next, so it pauses at
-// narrow throats and bursts through pore bodies.
-//
-// Learning: the network sees only local, current information about each patch of pore space
-// on the fluid front, and learns from snapshots of one simulated rock which patches fill next.
-// On a new rock it rolls the flow forward on its own, ranking the front at every step.
+// Drainage in a 2D porous medium: polydisperse grains on a grid, with a non-wetting fluid
+// invading from the left by invasion percolation. The fluid always enters the widest open pore
+// next, so it pauses at narrow throats and bursts through pore bodies. The neural network that
+// learns to predict it lives in learn.ts.
 
 export const SCALE = 2; // grid cells per CSS pixel
 export const INLET = 7 * SCALE; // open reservoir on the left face
-export const B = 4; // the network works on B×B-cell patches
+export const B = 4; // the network works on B×B-cell patches (see learn.ts)
 
 export type Rock = { W: number; H: number; solid: Uint8Array; rad: Float32Array; pores: number };
 type Grain = { x: number; y: number; r: number };
@@ -53,6 +48,12 @@ class Heap {
 // The distance field is computed per grain over its own bounding box, which is far cheaper
 // than querying neighbours for every cell.
 export function makeRock(W: number, H: number, seed: number): Rock {
+  const it = makeRockSteps(W, H, seed);
+  for (;;) { const r = it.next(); if (r.done) return r.value; }
+}
+
+// The same, as a generator that yields progress in [0, 1], so callers can spread it over frames.
+export function* makeRockSteps(W: number, H: number, seed: number): Generator<number, Rock> {
   const rand = rng(seed);
   const cell = 36, cols = Math.ceil(W / cell) + 2, rows = Math.ceil(H / cell) + 2;
   const buckets: Grain[][] = Array.from({ length: cols * rows }, () => []);
@@ -70,10 +71,13 @@ export function makeRock(W: number, H: number, seed: number): Rock {
       for (const g of buckets[k]) if (Math.hypot(g.x - x, g.y - y) < g.r + r + gap) { ok = false; break; }
     }
     if (ok) { const g = { x, y, r }; buckets[b].push(g); grains.push(g); }
+    if (i % 15000 === 14999) yield (0.3 * i) / 60000;
   }
   const rad = new Float32Array(W * H).fill(40); // pores farther than this from a grain are rare
   const REACH = 40;
-  for (const g of grains) {
+  for (let n = 0; n < grains.length; n++) {
+    const g = grains[n];
+    if (n % 40 === 39) yield 0.3 + (0.6 * n) / grains.length;
     const x0 = Math.max(0, Math.floor(g.x - g.r - REACH)), x1 = Math.min(W - 1, Math.ceil(g.x + g.r + REACH));
     const y0 = Math.max(0, Math.floor(g.y - g.r - REACH)), y1 = Math.min(H - 1, Math.ceil(g.y + g.r + REACH));
     for (let y = y0; y <= y1; y++) {
@@ -139,192 +143,4 @@ export function saturation(rock: Rock, state: Uint8Array) {
   let n = 0;
   for (let i = 0; i < state.length; i++) if (state[i] === 2 && i % rock.W >= INLET) n++;
   return n / rock.pores;
-}
-
-// ---- Patches -------------------------------------------------------------------------------
-
-type Patches = { bw: number; bh: number; size: Float32Array; pore: Uint8Array; map: Int32Array };
-function patchesOf(rock: Rock): Patches {
-  const bw = Math.ceil(rock.W / B), bh = Math.ceil(rock.H / B);
-  const size = new Float32Array(bw * bh), pore = new Uint8Array(bw * bh), map = new Int32Array(rock.W * rock.H);
-  for (let y = 0; y < rock.H; y++) for (let x = 0; x < rock.W; x++) {
-    const i = y * rock.W + x, b = ((y / B) | 0) * bw + ((x / B) | 0);
-    map[i] = b;
-    if (!rock.solid[i]) { pore[b] = 1; size[b] = Math.max(size[b], rock.rad[i]); }
-  }
-  return { bw, bh, size, pore, map };
-}
-
-export const FEATURES = ['Pore size', 'Relative size', 'Wet sides', 'Wet nearby', 'Just filled'];
-export const NF = FEATURES.length;
-
-function features(p: Patches, wet: (b: number) => boolean, fresh: (b: number) => boolean, b: number, frontMax: number, out: Float32Array, o: number) {
-  const { bw, bh, size } = p, x = b % bw, y = (b / bw) | 0;
-  let n4 = 0, n8 = 0, f8 = 0;
-  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-    if (!dx && !dy) continue;
-    const xx = x + dx, yy = y + dy;
-    if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) continue;
-    const j = yy * bw + xx;
-    if (wet(j)) { n8++; if (!dx || !dy) n4++; if (fresh(j)) f8++; }
-  }
-  const r = Math.min(size[b], 18);
-  out[o] = r / 18; out[o + 1] = r / Math.max(frontMax, 1); out[o + 2] = n4 / 4; out[o + 3] = n8 / 8; out[o + 4] = Math.min(f8, 3) / 3;
-}
-
-function frontOf(p: Patches, wet: (b: number) => boolean) {
-  const { bw, bh, pore, size } = p, front: number[] = [];
-  let frontMax = 0;
-  for (let b = 0; b < bw * bh; b++) {
-    if (!pore[b] || wet(b)) continue;
-    const x = b % bw, y = (b / bw) | 0;
-    if ((x > 0 && wet(b - 1)) || (x < bw - 1 && wet(b + 1)) || (y > 0 && wet(b - bw)) || (y < bh - 1 && wet(b + bw))) {
-      front.push(b); frontMax = Math.max(frontMax, size[b]);
-    }
-  }
-  return { front, frontMax };
-}
-
-// ---- Training data -------------------------------------------------------------------------
-
-export type Dataset = { X: Float32Array; Y: Uint8Array; rate: number };
-
-// Simulate drainage in a training rock and turn snapshots into (features, fills next) pairs.
-// A generator, so the caller can spread the work over frames; it yields progress in [0, 1].
-export function* datasetSteps(rock: Rock, seed: number): Generator<number, Dataset> {
-  const sim = simulator(rock);
-  while (sim.step()) if (sim.frame % 60 === 0) yield Math.min(0.45, sim.frame / 1200);
-  yield 0.45;
-  const p = patchesOf(rock), bt = new Float64Array(p.bw * p.bh);
-  const lists: number[][] = Array.from({ length: bt.length }, () => []);
-  for (let i = 0; i < rock.W * rock.H; i++) if (!rock.solid[i]) lists[p.map[i]].push(sim.time[i] < 0 ? Infinity : sim.time[i]);
-  lists.forEach((l, b) => { bt[b] = l.length ? l.sort((a, c) => a - c)[Math.ceil(l.length / 2) - 1] : Infinity; });
-
-  const rand = rng(seed + 7);
-  const pos: Float32Array[] = [], neg: Float32Array[] = [];
-  for (let t = 0; t < sim.frame - 1; t += 2) {
-    if (t % 24 === 0) yield 0.5 + (0.5 * t) / sim.frame;
-    const wet = (b: number) => bt[b] <= t, fresh = (b: number) => bt[b] === t;
-    const { front, frontMax } = frontOf(p, wet);
-    for (const b of front) {
-      const f = new Float32Array(NF);
-      features(p, wet, fresh, b, frontMax, f, 0);
-      (bt[b] <= t + 1 ? pos : neg).push(f);
-    }
-  }
-  const shuffle = <T>(a: T[]) => { for (let i = a.length - 1; i > 0; i--) { const j = (rand() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  const P = shuffle(pos).slice(0, 2500), Nn = shuffle(neg).slice(0, P.length * 2);
-  const rows = shuffle([...P.map((f) => [f, 1] as const), ...Nn.map((f) => [f, 0] as const)]);
-  const X = new Float32Array(rows.length * NF), Y = new Uint8Array(rows.length);
-  rows.forEach(([f, y], s) => { X.set(f, s * NF); Y[s] = y; });
-  let filled = 0;
-  for (let b = 0; b < bt.length; b++) if (bt[b] > 0 && bt[b] < Infinity) filled++;
-  return { X, Y, rate: filled / sim.frame };
-}
-
-export function dataset(rock: Rock, seed: number): Dataset {
-  const it = datasetSteps(rock, seed);
-  for (;;) { const r = it.next(); if (r.done) return r.value; }
-}
-
-// ---- The network ---------------------------------------------------------------------------
-
-export const HIDDEN = 10;
-
-// A two-layer perceptron, NF → HIDDEN (tanh) → 1 (sigmoid), trained by Adam on mini-batches.
-export function network(seed: number) {
-  const rand = rng(seed);
-  const n = NF * HIDDEN + HIDDEN + HIDDEN + 1;
-  const W1 = 0, B1 = NF * HIDDEN, W2 = B1 + HIDDEN, B2 = W2 + HIDDEN;
-  const w = new Float32Array(n).map(() => (rand() - 0.5) * 1.2);
-  w[B2] = 0;
-  const m = new Float32Array(n), v = new Float32Array(n), g = new Float32Array(n), h = new Float32Array(HIDDEN);
-  let t = 0;
-
-  function forward(x: Float32Array, o: number) {
-    let z = w[B2];
-    for (let k = 0; k < HIDDEN; k++) {
-      let a = w[B1 + k];
-      for (let f = 0; f < NF; f++) a += w[W1 + k * NF + f] * x[o + f];
-      h[k] = Math.tanh(a); z += w[W2 + k] * h[k];
-    }
-    return 1 / (1 + Math.exp(-z));
-  }
-
-  // One pass over the data in mini-batches. Returns the mean loss over the pass.
-  function epoch(X: Float32Array, Y: Uint8Array, batch = 256, lr = 0.004) {
-    const count = Y.length;
-    let total = 0;
-    for (let s0 = 0; s0 < count; s0 += batch) {
-      const s1 = Math.min(count, s0 + batch), bs = s1 - s0;
-      g.fill(0);
-      for (let s = s0; s < s1; s++) {
-        const p = forward(X, s * NF), y = Y[s];
-        total -= y ? Math.log(p + 1e-7) : Math.log(1 - p + 1e-7);
-        const dz = (p - y) / bs;
-        g[B2] += dz;
-        for (let k = 0; k < HIDDEN; k++) {
-          g[W2 + k] += dz * h[k];
-          const da = dz * w[W2 + k] * (1 - h[k] * h[k]);
-          g[B1 + k] += da;
-          for (let f = 0; f < NF; f++) g[W1 + k * NF + f] += da * X[s * NF + f];
-        }
-      }
-      t++;
-      const c1 = 1 - 0.9 ** t, c2 = 1 - 0.999 ** t;
-      for (let q = 0; q < n; q++) {
-        m[q] = 0.9 * m[q] + 0.1 * g[q]; v[q] = 0.999 * v[q] + 0.001 * g[q] * g[q];
-        w[q] -= (lr * (m[q] / c1)) / (Math.sqrt(v[q] / c2) + 1e-8);
-      }
-    }
-    return total / count;
-  }
-
-  // Mean loss without updating weights, for held-out data.
-  function loss(X: Float32Array, Y: Uint8Array) {
-    let total = 0;
-    for (let s = 0; s < Y.length; s++) { const p = forward(X, s * NF); total -= Y[s] ? Math.log(p + 1e-7) : Math.log(1 - p + 1e-7); }
-    return total / Y.length;
-  }
-
-  // Weight accessors for drawing the network.
-  const inWeight = (f: number, k: number) => w[W1 + k * NF + f];
-  const outWeight = (k: number) => w[W2 + k];
-  return { forward, epoch, loss, inWeight, outWeight };
-}
-export type Network = ReturnType<typeof network>;
-
-// ---- Prediction ----------------------------------------------------------------------------
-
-// Roll the flow forward with the network alone: each step it scores every patch on the front,
-// and the highest-scoring patches fill, at the rate learned from the training rock.
-export function rollout(rock: Rock, net: Network, rate: number) {
-  const { W, H, solid } = rock, p = patchesOf(rock), N = W * H;
-  const wetP = new Uint8Array(p.bw * p.bh), age = new Int32Array(p.bw * p.bh).fill(-1);
-  for (let b = 0; b < wetP.length; b++) if ((b % p.bw) * B < INLET && p.pore[b]) { wetP[b] = 1; age[b] = 0; }
-  const state = new Uint8Array(N);
-  for (let i = 0; i < N; i++) state[i] = solid[i] ? 1 : wetP[p.map[i]] || i % W < INLET ? 2 : 0;
-  const wet = (b: number) => wetP[b] === 1;
-  let t = 0, budget = 0;
-  const fresh = (b: number) => age[b] === t, x = new Float32Array(NF);
-  // Cells of each patch, so a filled patch repaints only its own cells.
-  const cells: number[][] = Array.from({ length: wetP.length }, () => []);
-  for (let i = 0; i < N; i++) if (!solid[i]) cells[p.map[i]].push(i);
-  function step() {
-    const { front, frontMax } = frontOf(p, wet);
-    budget += rate;
-    const k = Math.min(Math.floor(budget), front.length);
-    budget -= k;
-    if (k === 0) { t++; return; }
-    const score = new Float32Array(front.length);
-    front.forEach((b, j) => { features(p, wet, fresh, b, frontMax, x, 0); score[j] = net.forward(x, 0); });
-    const order = Array.from(front.keys()).sort((a, c) => score[c] - score[a]);
-    t++;
-    for (let j = 0; j < k; j++) {
-      const b = front[order[j]];
-      wetP[b] = 1; age[b] = t;
-      for (const i of cells[b]) state[i] = 2;
-    }
-  }
-  return { state, step };
 }
