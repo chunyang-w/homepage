@@ -19,7 +19,8 @@ npm run build      # outputs dist/
 | News items (one file each) | `src/content/news/YYYY-MM-slug.md` |
 | Publications (one file each) | `src/content/publications/YYYY-slug.md` |
 | Avatar, figures, CV | `public/img/`, `public/files/` |
-| Header and the simulation versus neural network strip (trained in the browser) | `src/components/Header.astro`, `src/components/CoreSample.astro` |
+| Header and the interactive strip: simulation, in-browser training with loss chart and network diagram, prediction | `src/components/Header.astro`, `src/components/CoreSample.astro` |
+| Physics (invasion percolation) and the neural network, framework-free | `src/lib/porous.ts` |
 | Light, Auto and Dark theme switch | `src/components/ThemeToggle.astro`, pre-paint script in `src/layouts/Base.astro` |
 | Design tokens (colours, fonts) and layout | `src/styles/global.css` |
 
