@@ -31,7 +31,8 @@ title: "SpongeCore: A Porous Media Benchmark for ..."
 authors: "**Chunyang Wang**, Coauthor Name"
 venue: "NeurIPS Datasets and Benchmarks Track"
 year: 2026
-image: /img/spongecore.png
+date: 2026-05-15        # optional, orders papers within a year
+image: /img/spongecore.webp
 links:
   pdf: https://arxiv.org/abs/...
   code: https://github.com/...
@@ -41,7 +42,7 @@ notes: Spotlight
 Optional one-line note rendered under the entry.
 ```
 
-Fields are validated by the schema in `src/content.config.ts`. Entries sort by year, newest first.
+Fields are validated by the schema in `src/content.config.ts`. Entries sort by date (or year if no date), newest first. Keep figures around 800px wide in WebP: `cwebp -q 82 -resize 800 0 fig.png -o public/img/pub-name.webp`.
 
 ### Add a news item
 

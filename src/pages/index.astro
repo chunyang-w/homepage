@@ -1,5 +1,6 @@
 ---
 import { getCollection, render } from 'astro:content';
+import { site } from '../data/site';
 import Base from '../layouts/Base.astro';
 import Sidebar from '../components/Sidebar.astro';
 import Publication from '../components/Publication.astro';
@@ -7,7 +8,8 @@ import { Content as Bio } from '../content/bio.md';
 
 const news = (await getCollection('news')).sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 const newsRendered = await Promise.all(news.map(async (n) => ({ ...n, Content: (await render(n)).Content })));
-const pubs = (await getCollection('publications')).sort((a, b) => b.data.year - a.data.year || a.id.localeCompare(b.id));
+const pubTime = (p: { data: { year: number; date?: Date } }) => p.data.date?.getTime() ?? Date.UTC(p.data.year, 0);
+const pubs = (await getCollection('publications')).sort((a, b) => pubTime(b) - pubTime(a));
 const fmt = (d: Date) => d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 ---
 <Base>
@@ -22,7 +24,7 @@ const fmt = (d: Date) => d.toLocaleDateString('en-GB', { month: 'short', year: '
       ))}
     </ul>
 
-    <h2 id="publications">Publications</h2>
+    <h2 id="publications" class="with-aside">Publications <a href={site.scholar} target="_blank" rel="noopener">Google Scholar ↗</a></h2>
     <ol class="pubs">
       {pubs.map((p) => <Publication entry={p} />)}
     </ol>

@@ -10,6 +10,7 @@ const publications = defineCollection({
     authors: z.string(), // markdown; wrap yourself in ** to bold
     venue: z.string(),
     year: z.number(),
+    date: z.coerce.date().optional(), // sorts entries newest first
     image: z.string().optional(),
     links: z
       .object({

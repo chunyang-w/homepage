@@ -80,6 +80,8 @@ main h2 {
   border-bottom: 1px solid var(--rule);
 }
 main > :first-child h2, main h2:first-child { margin-top: 0; }
+main h2.with-aside { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+main h2.with-aside a { font-family: var(--sans); font-size: 0.8rem; font-weight: 400; }
 main p { margin: 0 0 14px; }
 main ul { padding-left: 1.2em; margin: 0 0 14px; }
 main li { margin-bottom: 6px; }
@@ -91,10 +93,10 @@ main li { margin-bottom: 6px; }
 
 /* Publications */
 .pubs { list-style: none; padding: 0; margin: 0; }
-.pub { display: grid; grid-template-columns: 150px 1fr; gap: 20px; margin-bottom: 22px; }
+.pub { display: grid; grid-template-columns: 200px 1fr; gap: 20px; margin-bottom: 26px; }
 @media (max-width: 520px) { .pub { grid-template-columns: 1fr; gap: 10px; } }
 .pub .thumb { border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: #fff; }
-.pub .thumb img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.pub .thumb img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; padding: 4px; }
 .pub .title { font-weight: 600; line-height: 1.35; }
 .pub .title a { color: inherit; }
 .pub .authors { margin-top: 2px; }
