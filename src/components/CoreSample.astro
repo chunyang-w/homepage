@@ -7,12 +7,12 @@ interface Props { height?: number; seed?: number; caption?: string }
 const {
   height = 88,
   seed = 11,
-  caption = 'Drainage: a non-wetting fluid enters from the left and invades the pore space one throat at a time, simulated by invasion percolation. Click to replay.',
+  caption = 'Drainage by invasion percolation. Click to replay.',
 } = Astro.props;
 ---
 <figure class="core-figure">
   <canvas class="core" data-seed={seed} style={`height:${height}px`} aria-label="Simulation of fluid invading the pore space of a porous medium" title="Click to replay"></canvas>
-  <figcaption><span class="key"><i class="sw grain"></i>grains</span><span class="key"><i class="sw fluid"></i>invading fluid</span>{caption}</figcaption>
+  <figcaption><span class="key"><i class="sw grain"></i>grains</span><span class="key"><i class="sw water"></i>water</span><span class="key"><i class="sw fluid"></i>invading fluid</span>{caption}</figcaption>
 </figure>
 
 <script>
@@ -138,13 +138,13 @@ const {
       const img = ctx.createImageData(W, H);
       function draw() {
         const cs = getComputedStyle(canvas);
-        const paper = parseColor(cs.getPropertyValue('--paper-rgb') || '255,255,255');
+        const water = parseColor(cs.getPropertyValue('--water-rgb') || '219,238,241');
         const grain = parseColor(cs.getPropertyValue('--grain-rgb') || '220,222,228');
         const phase = parseColor(cs.getPropertyValue('--phase-rgb') || '36,48,200');
         const d = img.data;
         for (let i = 0, p = 0; i < W * H; i++, p += 4) {
           const s = state[i];
-          let c = s === 1 ? grain : s === 2 ? phase : paper;
+          let c = s === 1 ? grain : s === 2 ? phase : water;
           if (s === 1) {
             const t = Math.min(-rad[i] / 7, 1); // 0 at the edge, 1 inside
             const k = 0.86 + 0.14 * t;
@@ -152,8 +152,8 @@ const {
           } else if (s === 2) {
             const x = i % W;
             const rim = (x > 0 && state[i - 1] === 0) || (x < W - 1 && state[i + 1] === 0) || (i >= W && state[i - W] === 0) || (i + W < W * H && state[i + W] === 0);
-            const t = rim ? 0.45 : Math.min(rad[i] / 12, 1) * 0.12; // bright meniscus, faint depth shading
-            d[p] = c[0] + (paper[0] - c[0]) * t; d[p + 1] = c[1] + (paper[1] - c[1]) * t; d[p + 2] = c[2] + (paper[2] - c[2]) * t;
+            const t = rim ? 0.42 : Math.min(rad[i] / 12, 1) * 0.1; // bright meniscus, faint depth shading
+            d[p] = c[0] + (255 - c[0]) * t; d[p + 1] = c[1] + (255 - c[1]) * t; d[p + 2] = c[2] + (255 - c[2]) * t;
           } else { d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2]; }
           d[p + 3] = 255;
         }
@@ -194,5 +194,6 @@ const {
   .key { white-space: nowrap; margin-right: 14px; }
   .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -0.5px; }
   .sw.grain { background: rgb(var(--grain-rgb)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 15%, transparent); }
+  .sw.water { background: rgb(var(--water-rgb)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 12%, transparent); }
   .sw.fluid { background: rgb(var(--phase-rgb)); }
 </style>
