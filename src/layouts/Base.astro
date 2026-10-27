@@ -6,6 +6,7 @@ import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '../styles/global.css';
 import { site } from '../data/site';
+import ThemeToggle from '../components/ThemeToggle.astro';
 
 interface Props { title?: string; description?: string }
 const { title = site.name, description = site.description } = Astro.props;
@@ -20,6 +21,10 @@ const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : un
     <meta name="description" content={description} />
     <meta name="author" content={site.name} />
     <meta name="color-scheme" content="light dark" />
+    <script is:inline>
+      // Apply a saved theme before first paint to avoid a flash. No saved choice means "auto".
+      try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+    </script>
     {canonical && <link rel="canonical" href={canonical} />}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta property="og:title" content={title} />
@@ -29,6 +34,7 @@ const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : un
   </head>
   <body>
     <div class="page">
+      <div class="theme-slot"><ThemeToggle /></div>
       <slot />
     </div>
   </body>

@@ -1,22 +1,37 @@
 ---
-// A thin core sample: a 2D packing of grains with a non-wetting fluid invading the
-// pore space from the left by invasion percolation. Each step takes the widest
-// available throat, so the front pauses at narrow throats and jumps through pore
-// bodies, the way drainage looks in a micromodel. Runs once on load; click replays.
-interface Props { height?: number; seed?: number; caption?: string }
-const {
-  height = 88,
-  seed = 11,
-  caption = 'Drainage by invasion percolation. Click to replay.',
-} = Astro.props;
+// Learning multiphase flow, in miniature.
+//
+// Top row: drainage in a 2D grain packing, simulated by invasion percolation. The fluid
+// enters from the left and always takes the widest open throat next, so it pauses at
+// narrow throats and bursts through pore bodies.
+//
+// Bottom row: a small neural network that never sees the solver. It is trained in the
+// browser on snapshots from a different rock, learning the probability that a pore cell
+// is invaded in the next time step from its local state. It then predicts the flow in
+// this rock autoregressively, one step at a time, in sync with the simulation above.
+interface Props { rowHeight?: number; seed?: number }
+const { rowHeight = 60, seed = 11 } = Astro.props;
 ---
-<figure class="core-figure">
-  <canvas class="core" data-seed={seed} style={`height:${height}px`} aria-label="Simulation of fluid invading the pore space of a porous medium" title="Click to replay"></canvas>
-  <figcaption><span class="key"><i class="sw grain"></i>grains</span><span class="key"><i class="sw water"></i>water</span><span class="key"><i class="sw fluid"></i>invading fluid</span>{caption}</figcaption>
+<figure class="core-figure" data-seed={seed} style={`--row:${rowHeight}px`}>
+  <div class="rows">
+    <div class="row"><canvas class="sim" aria-hidden="true"></canvas><span class="tag">Simulation</span></div>
+    <div class="row"><canvas class="net" aria-hidden="true"></canvas><span class="tag">Neural network</span></div>
+  </div>
+  <figcaption>
+    <span class="key"><i class="sw grain"></i>grains</span>
+    <span class="key"><i class="sw water"></i>water</span>
+    <span class="key"><i class="sw fluid"></i>invading fluid</span>
+    <span class="text">A network trained on one rock predicts drainage in another, step by step. <button type="button" class="again">New rock</button></span>
+    <span class="score" aria-live="polite"></span>
+  </figcaption>
 </figure>
 
 <script>
   type Grain = { x: number; y: number; r: number };
+  type Rock = { W: number; H: number; solid: Uint8Array; rad: Float32Array; pores: number };
+
+  const SCALE = 2; // simulation cells per CSS pixel
+  const INLET = 7 * SCALE; // open reservoir on the left face
 
   function rng(a: number) {
     return () => {
@@ -27,9 +42,8 @@ const {
     };
   }
 
-  function parseColor(c: string): [number, number, number] {
-    const m = c.match(/\d+(\.\d+)?/g)?.map(Number) ?? [0, 0, 0];
-    return [m[0], m[1], m[2]];
+  function rgb(cs: CSSStyleDeclaration, name: string, fallback: string): number[] {
+    return (cs.getPropertyValue(name) || fallback).match(/\d+(\.\d+)?/g)!.map(Number);
   }
 
   class Heap {
@@ -57,143 +71,389 @@ const {
     }
   }
 
-  const SCALE = 2; // simulation cells per CSS pixel
-
-  function setup(canvas: HTMLCanvasElement) {
-    const ctx = canvas.getContext('2d')!;
-    const reduce = matchMedia('(prefers-reduced-motion: reduce)');
-    let raf = 0;
-    let sim: ReturnType<typeof build> | null = null;
-
-    function build() {
-      const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
-      const W = Math.round(cssW * SCALE), H = Math.round(cssH * SCALE);
-      canvas.width = W; canvas.height = H;
-      const rand = rng(Number(canvas.dataset.seed) + W);
-
-      // Grains: polydisperse, never touching, so every pore connects through a throat.
-      const grains: Grain[] = [];
-      const cell = 36, cols = Math.ceil(W / cell) + 2, rows = Math.ceil(H / cell) + 2;
-      const buckets: Grain[][] = Array.from({ length: cols * rows }, () => []);
-      const bi = (x: number, y: number) => (Math.floor(y / cell) + 1) * cols + Math.floor(x / cell) + 1;
-      for (let i = 0, n = 0; i < 60000 && n < 4000; i++) {
-        const r = 8 + Math.pow(rand(), 1.5) * 28;
-        const x = rand() * W, y = -8 + rand() * (H + 16);
-        const loose = 0.5 + 0.5 * Math.sin(x / 140 + 1.3) * Math.cos(y / 50); // looser and tighter patches
-        const gap = 3.5 + Math.pow(rand(), 3) * 22 + loose * 7; // ≥3.5 cells so every throat rasterises open
-        let ok = true;
-        const b = bi(x, y);
-        for (let dy = -2; dy <= 2 && ok; dy++) for (let dx = -2; dx <= 2 && ok; dx++) {
-          const k = b + dy * cols + dx; if (k < 0 || k >= buckets.length) continue;
-          for (const g of buckets[k]) if (Math.hypot(g.x - x, g.y - y) < g.r + r + gap) { ok = false; break; }
-        }
-        if (ok) { const g = { x, y, r }; grains.push(g); buckets[b].push(g); n++; }
+  // Polydisperse grains that never touch, then the signed distance to the nearest grain.
+  function makeRock(W: number, H: number, seed: number): Rock {
+    const rand = rng(seed);
+    const cell = 36, cols = Math.ceil(W / cell) + 2, rows = Math.ceil(H / cell) + 2;
+    const buckets: Grain[][] = Array.from({ length: cols * rows }, () => []);
+    const bi = (x: number, y: number) => (Math.floor(y / cell) + 1) * cols + Math.floor(x / cell) + 1;
+    for (let i = 0; i < 60000; i++) {
+      const r = 8 + Math.pow(rand(), 1.5) * 26;
+      const x = rand() * W, y = -8 + rand() * (H + 16);
+      const loose = 0.5 + 0.5 * Math.sin(x / 140 + seed) * Math.cos(y / 50);
+      const gap = 3.5 + Math.pow(rand(), 3) * 22 + loose * 7;
+      let ok = true;
+      const b = bi(x, y);
+      for (let dy = -2; dy <= 2 && ok; dy++) for (let dx = -2; dx <= 2 && ok; dx++) {
+        const k = b + dy * cols + dx; if (k < 0 || k >= buckets.length) continue;
+        for (const g of buckets[k]) if (Math.hypot(g.x - x, g.y - y) < g.r + r + gap) { ok = false; break; }
       }
-
-      // Signed distance to the nearest grain surface: positive in pores, negative inside grains.
-      const INLET = 7 * SCALE; // open reservoir along the left face
-      const state = new Uint8Array(W * H); // 0 pore, 1 grain, 2 invaded
-      const rad = new Float32Array(W * H);
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-        let d = 1e9; const b = bi(x, y);
-        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-          const k = b + dy * cols + dx; if (k < 0 || k >= buckets.length) continue;
-          for (const g of buckets[k]) { const e = Math.hypot(g.x - x, g.y - y) - g.r; if (e < d) d = e; }
-        }
-        const i = y * W + x;
-        if (x < INLET) d = Math.max(d, INLET - x + 1); // carve the reservoir
-        rad[i] = d;
-        if (d <= 0) state[i] = 1;
+      if (ok) buckets[b].push({ x, y, r });
+    }
+    const solid = new Uint8Array(W * H), rad = new Float32Array(W * H);
+    let pores = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let d = 1e9; const b = bi(x, y);
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const k = b + dy * cols + dx; if (k < 0 || k >= buckets.length) continue;
+        for (const g of buckets[k]) { const e = Math.hypot(g.x - x, g.y - y) - g.r; if (e < d) d = e; }
       }
+      if (x < INLET) d = Math.max(d, INLET - x + 1);
+      const i = y * W + x;
+      rad[i] = d;
+      if (d <= 0) solid[i] = 1; else if (x >= INLET) pores++;
+    }
+    return { W, H, solid, rad, pores };
+  }
 
-      // Invasion percolation from the left face, widest throat first.
-      const heap = new Heap();
-      const queued = new Uint8Array(W * H);
-      for (let y = 0; y < H; y++) { const i = y * W; if (!state[i]) { heap.push(rad[i], i); queued[i] = 1; } }
-      for (let y = 0; y < H; y++) for (let x = 0; x < INLET; x++) { const i = y * W + x; if (!state[i]) { queued[i] = 1; state[i] = 2; } }
-      for (let y = 0; y < H; y++) { const i = y * W + INLET - 1; const nb = [i + 1, i - W, i + W]; for (const j of nb) if (j >= 0 && j < W * H && !state[j] && !queued[j]) { queued[j] = 1; heap.push(rad[j], j); } }
-      let pressure = 0; // 1 / entry radius; rises while the front is stuck
-      let breakthrough = false, tail = 0;
+  function neighbours(i: number, W: number, N: number, out: number[]) {
+    out.length = 0;
+    const x = i % W;
+    if (x > 0) out.push(i - 1);
+    if (x < W - 1) out.push(i + 1);
+    if (i >= W) out.push(i - W);
+    if (i + W < N) out.push(i + W);
+    return out;
+  }
 
-      function invade(i: number) {
-        state[i] = 2;
-        const x = i % W;
-        if (x >= W - 1) breakthrough = true;
-        const nb = [i - 1, i + 1, i - W, i + W];
-        if (x === 0) nb[0] = -1; if (x === W - 1) nb[1] = -1;
-        for (const j of nb) if (j >= 0 && j < W * H && !state[j] && !queued[j]) { queued[j] = 1; heap.push(rad[j], j); }
-      }
-
-      function step(): boolean {
-        if (breakthrough) { if (tail++ < 24) { let n = 0; while (heap.size && 1 / heap.peek() <= pressure && n++ < 40) invade(heap.pop()); return true; } return false; }
-        if (!heap.size) return false;
-        let n = 0;
-        while (heap.size && 1 / heap.peek() <= pressure && n < 190) { invade(heap.pop()); n++; }
-        if (n === 0) pressure += Math.max(0.0025, (1 / heap.peek() - pressure) * 0.1); // stuck: build pressure, pause bounded
+  // Invasion percolation: the ground truth. `time[i]` records the frame each cell was invaded.
+  function simulator(rock: Rock) {
+    const { W, H, solid, rad } = rock, N = W * H;
+    const state = new Uint8Array(N); // 0 water, 1 grain, 2 fluid
+    const time = new Int32Array(N).fill(-1);
+    const queued = new Uint8Array(N);
+    const heap = new Heap(), nb: number[] = [];
+    for (let i = 0; i < N; i++) if (solid[i]) state[i] = 1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < INLET; x++) { const i = y * W + x; if (!solid[i]) { state[i] = 2; time[i] = 0; queued[i] = 1; } }
+    for (let y = 0; y < H; y++) for (const j of neighbours(y * W + INLET - 1, W, N, nb)) if (!state[j] && !queued[j]) { queued[j] = 1; heap.push(rad[j], j); }
+    let pressure = 0, frame = 0, breakthrough = false, tail = 0;
+    const invade = (i: number) => {
+      state[i] = 2; time[i] = frame;
+      if (i % W === W - 1) breakthrough = true;
+      for (const j of neighbours(i, W, N, nb)) if (!state[j] && !queued[j]) { queued[j] = 1; heap.push(rad[j], j); }
+    };
+    function step(): boolean {
+      frame++;
+      if (breakthrough) {
+        if (tail++ >= 24) return false;
+        let n = 0; while (heap.size && 1 / heap.peek() <= pressure && n++ < 40) invade(heap.pop());
         return true;
       }
-
-      function finish() { while (step()); }
-
-      const img = ctx.createImageData(W, H);
-      function draw() {
-        const cs = getComputedStyle(canvas);
-        const water = parseColor(cs.getPropertyValue('--water-rgb') || '219,238,241');
-        const grain = parseColor(cs.getPropertyValue('--grain-rgb') || '220,222,228');
-        const phase = parseColor(cs.getPropertyValue('--phase-rgb') || '36,48,200');
-        const d = img.data;
-        for (let i = 0, p = 0; i < W * H; i++, p += 4) {
-          const s = state[i];
-          let c = s === 1 ? grain : s === 2 ? phase : water;
-          if (s === 1) {
-            const t = Math.min(-rad[i] / 7, 1); // 0 at the edge, 1 inside
-            const k = 0.86 + 0.14 * t;
-            d[p] = c[0] * k; d[p + 1] = c[1] * k; d[p + 2] = c[2] * k;
-          } else if (s === 2) {
-            const x = i % W;
-            const rim = (x > 0 && state[i - 1] === 0) || (x < W - 1 && state[i + 1] === 0) || (i >= W && state[i - W] === 0) || (i + W < W * H && state[i + W] === 0);
-            const t = rim ? 0.42 : Math.min(rad[i] / 12, 1) * 0.1; // bright meniscus, faint depth shading
-            d[p] = c[0] + (255 - c[0]) * t; d[p + 1] = c[1] + (255 - c[1]) * t; d[p + 2] = c[2] + (255 - c[2]) * t;
-          } else { d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2]; }
-          d[p + 3] = 255;
-        }
-        ctx.putImageData(img, 0, 0);
-      }
-      return { step, finish, draw };
+      if (!heap.size) return false;
+      let n = 0;
+      while (heap.size && 1 / heap.peek() <= pressure && n < 190) { invade(heap.pop()); n++; }
+      if (n === 0) pressure += Math.max(0.0025, (1 / heap.peek() - pressure) * 0.1);
+      return true;
     }
+    return { state, time, step, get frame() { return frame; } };
+  }
 
-    function run() {
+  // The network works on a coarse grid of B×B-cell blocks, like the patches of a learned
+  // simulator. A block is wet once most of its pore cells hold the invading fluid.
+  const B = 4;
+  type Blocks = { bw: number; bh: number; size: Float32Array; pore: Uint8Array };
+  function blocksOf(rock: Rock): Blocks {
+    const bw = Math.ceil(rock.W / B), bh = Math.ceil(rock.H / B);
+    const size = new Float32Array(bw * bh), pore = new Uint8Array(bw * bh);
+    for (let y = 0; y < rock.H; y++) for (let x = 0; x < rock.W; x++) {
+      const i = y * rock.W + x, b = ((y / B) | 0) * bw + ((x / B) | 0);
+      if (!rock.solid[i]) { pore[b] = 1; size[b] = Math.max(size[b], rock.rad[i]); }
+    }
+    return { bw, bh, size, pore };
+  }
+
+  // Features of a dry block on the front, computable from the last two states: its pore size,
+  // pore size relative to the widest pore on the front, wet neighbours, and neighbours that
+  // turned wet in the last step (a short memory, so bursts can carry on).
+  const NF = 5;
+  function features(bl: Blocks, wet: (b: number) => boolean, fresh: (b: number) => boolean, b: number, frontMax: number, out: Float32Array, o: number) {
+    const { bw, bh, size } = bl, x = b % bw, y = (b / bw) | 0;
+    let n4 = 0, n8 = 0, f8 = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) continue;
+      const j = yy * bw + xx;
+      if (wet(j)) { n8++; if (!dx || !dy) n4++; if (fresh(j)) f8++; }
+    }
+    const r = Math.min(size[b], 18);
+    out[o] = r / 18; out[o + 1] = r / Math.max(frontMax, 1); out[o + 2] = n4 / 4; out[o + 3] = n8 / 8; out[o + 4] = Math.min(f8, 3) / 3;
+  }
+
+  function frontOf(bl: Blocks, wet: (b: number) => boolean) {
+    const { bw, bh, pore, size } = bl, front: number[] = [];
+    let frontMax = 0;
+    for (let b = 0; b < bw * bh; b++) {
+      if (!pore[b] || wet(b)) continue;
+      const x = b % bw, y = (b / bw) | 0;
+      if ((x > 0 && wet(b - 1)) || (x < bw - 1 && wet(b + 1)) || (y > 0 && wet(b - bw)) || (y < bh - 1 && wet(b + bw))) {
+        front.push(b); frontMax = Math.max(frontMax, size[b]);
+      }
+    }
+    return { front, frontMax };
+  }
+
+  // A two-layer perceptron, NF → 12 → 1, trained with Adam on binary cross-entropy.
+  const HID = 12;
+  function mlp(rand: () => number) {
+    const n = NF * HID + HID + HID + 1;
+    const w = new Float32Array(n).map(() => (rand() - 0.5) * 0.8);
+    w[n - 1] = -1;
+    const W1 = 0, B1 = NF * HID, W2 = B1 + HID, B2 = W2 + HID;
+    const h = new Float32Array(HID);
+    function forward(x: Float32Array, o: number) {
+      let z = w[B2];
+      for (let k = 0; k < HID; k++) {
+        let a = w[B1 + k];
+        for (let f = 0; f < NF; f++) a += w[W1 + k * NF + f] * x[o + f];
+        h[k] = Math.tanh(a); z += w[W2 + k] * h[k];
+      }
+      return 1 / (1 + Math.exp(-z));
+    }
+    async function train(X: Float32Array, Y: Uint8Array, epochs: number) {
+      const m = new Float32Array(n), v = new Float32Array(n), g = new Float32Array(n);
+      const count = Y.length, lr = 0.03, b1 = 0.9, b2 = 0.999;
+      let loss = 0;
+      for (let e = 1; e <= epochs; e++) {
+        g.fill(0); loss = 0;
+        for (let s = 0; s < count; s++) {
+          const p = forward(X, s * NF), y = Y[s];
+          loss -= y ? Math.log(p + 1e-7) : Math.log(1 - p + 1e-7);
+          const dz = (p - y) / count;
+          g[B2] += dz;
+          for (let k = 0; k < HID; k++) {
+            g[W2 + k] += dz * h[k];
+            const da = dz * w[W2 + k] * (1 - h[k] * h[k]);
+            g[B1 + k] += da;
+            for (let f = 0; f < NF; f++) g[W1 + k * NF + f] += da * X[s * NF + f];
+          }
+        }
+        for (let q = 0; q < n; q++) {
+          m[q] = b1 * m[q] + (1 - b1) * g[q]; v[q] = b2 * v[q] + (1 - b2) * g[q] * g[q];
+          w[q] -= (lr * (m[q] / (1 - b1 ** e))) / (Math.sqrt(v[q] / (1 - b2 ** e)) + 1e-8);
+        }
+        if (e % 20 === 0) await idle(); // let the page breathe while training
+      }
+      return loss / count;
+    }
+    return { forward, train };
+  }
+
+  // Time at which each block turns wet, from a finished simulation.
+  function blockTimes(rock: Rock, bl: Blocks, time: Int32Array) {
+    const lists: number[][] = Array.from({ length: bl.bw * bl.bh }, () => []);
+    for (let y = 0; y < rock.H; y++) for (let x = 0; x < rock.W; x++) {
+      const i = y * rock.W + x;
+      if (!rock.solid[i]) lists[((y / B) | 0) * bl.bw + ((x / B) | 0)].push(time[i] < 0 ? Infinity : time[i]);
+    }
+    return Float64Array.from(lists, (l) => (l.length ? l.sort((a, b) => a - b)[Math.ceil(l.length / 2) - 1] : Infinity));
+  }
+
+  const idle = () => new Promise<void>((r) => setTimeout(r, 0));
+
+  // Train on snapshots of a full simulation in a separate rock of the same size.
+  async function trainModel(W: number, H: number, seed: number) {
+    const rock = makeRock(W, H, seed + 1000);
+    await idle();
+    const sim = simulator(rock);
+    while (sim.step());
+    await idle();
+    const bl = blocksOf(rock), bt = blockTimes(rock, bl, sim.time);
+    const rand = rng(seed + 7);
+    const pos: number[][] = [], neg: number[][] = [], buf = new Float32Array(NF);
+    for (let t = 0; t < sim.frame - 1; t += 2) {
+      const wet = (b: number) => bt[b] <= t, fresh = (b: number) => bt[b] === t;
+      const { front, frontMax } = frontOf(bl, wet);
+      for (const b of front) {
+        features(bl, wet, fresh, b, frontMax, buf, 0);
+        (bt[b] <= t + 1 ? pos : neg).push([...buf]);
+      }
+    }
+    // Balance the classes and cap the set so training stays well under a second.
+    const nPos = Math.min(pos.length, 2500), keep = Math.min(1, (nPos * 2) / Math.max(neg.length, 1));
+    const pick = <T,>(a: T[], k: number) => { for (let i = a.length - 1; i > 0; i--) { const j = (rand() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a.slice(0, k); };
+    const P = pick(pos, nPos), Nn = pick(neg, Math.round(neg.length * keep));
+    const X = new Float32Array((P.length + Nn.length) * NF), Y = new Uint8Array(P.length + Nn.length);
+    [...P, ...Nn].forEach((f, s) => { X.set(f, s * NF); Y[s] = s < P.length ? 1 : 0; });
+    await idle();
+    const net = mlp(rand);
+    const loss = await net.train(X, Y, 260);
+    // Average invasion rate, in blocks per step, also learned from the training rock.
+    let wetCount = 0;
+    for (let b = 0; b < bt.length; b++) if (bt[b] > 0 && bt[b] < Infinity) wetCount++;
+    return { net, loss, samples: Y.length, rate: wetCount / sim.frame };
+  }
+
+  // Autoregressive rollout: each step the network scores every block on the front, and the
+  // highest-scoring blocks turn wet, at the invasion rate learned from the training rock.
+  function rollout(rock: Rock, model: { net: ReturnType<typeof mlp>; rate: number }) {
+    const { W, H, solid } = rock, bl = blocksOf(rock), net = model.net;
+    let budget = 0;
+    const wetB = new Uint8Array(bl.bw * bl.bh), age = new Int32Array(bl.bw * bl.bh).fill(-1);
+    let t = 0;
+    for (let b = 0; b < wetB.length; b++) if ((b % bl.bw) * B < INLET && bl.pore[b]) { wetB[b] = 1; age[b] = 0; }
+    const state = new Uint8Array(W * H);
+    const paint = () => {
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        state[i] = solid[i] ? 1 : wetB[((y / B) | 0) * bl.bw + ((x / B) | 0)] || x < INLET ? 2 : 0;
+      }
+    };
+    paint();
+    const wet = (b: number) => wetB[b] === 1, fresh = (b: number) => age[b] === t, x = new Float32Array(NF);
+    function step() {
+      const { front, frontMax } = frontOf(bl, wet);
+      budget += model.rate;
+      const k = Math.min(Math.floor(budget), front.length);
+      budget -= k;
+      const scored = front.map((b) => { features(bl, wet, fresh, b, frontMax, x, 0); return [net.forward(x, 0), b]; });
+      scored.sort((a, b) => b[0] - a[0]);
+      const hits = scored.slice(0, k).map((e) => e[1]);
+      t++;
+      for (const b of hits) { wetB[b] = 1; age[b] = t; }
+      paint();
+    }
+    return { state, step };
+  }
+
+  function saturation(rock: Rock, state: Uint8Array) {
+    let n = 0;
+    for (let i = 0; i < state.length; i++) if (state[i] === 2 && i % rock.W >= INLET) n++;
+    return n / rock.pores;
+  }
+
+  function painter(canvas: HTMLCanvasElement, rock: Rock, meniscus = true) {
+    const ctx = canvas.getContext('2d')!;
+    canvas.width = rock.W; canvas.height = rock.H;
+    const img = ctx.createImageData(rock.W, rock.H);
+    return (state: Uint8Array) => {
+      const cs = getComputedStyle(canvas);
+      const water = rgb(cs, '--water-rgb', '238,240,243');
+      const grain = rgb(cs, '--grain-rgb', '196,200,208');
+      const phase = rgb(cs, '--phase-rgb', '36,48,200');
+      const { W, rad } = rock, N = state.length, d = img.data;
+      for (let i = 0, p = 0; i < N; i++, p += 4) {
+        const s = state[i];
+        if (s === 1) {
+          const k = 0.86 + 0.14 * Math.min(-rad[i] / 7, 1);
+          d[p] = grain[0] * k; d[p + 1] = grain[1] * k; d[p + 2] = grain[2] * k;
+        } else if (s === 2) {
+          const x = i % W;
+          const rim = meniscus && ((x > 0 && state[i - 1] === 0) || (x < W - 1 && state[i + 1] === 0) || (i >= W && state[i - W] === 0) || (i + W < N && state[i + W] === 0));
+          const t = rim ? 0.42 : Math.min(rad[i] / 12, 1) * 0.1;
+          d[p] = phase[0] + (255 - phase[0]) * t; d[p + 1] = phase[1] + (255 - phase[1]) * t; d[p + 2] = phase[2] + (255 - phase[2]) * t;
+        } else { d[p] = water[0]; d[p + 1] = water[1]; d[p + 2] = water[2]; }
+        d[p + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    };
+  }
+
+  function setup(figure: HTMLElement) {
+    const simCanvas = figure.querySelector<HTMLCanvasElement>('canvas.sim')!;
+    const netCanvas = figure.querySelector<HTMLCanvasElement>('canvas.net')!;
+    const score = figure.querySelector<HTMLElement>('.score')!;
+    const netTag = netCanvas.parentElement!.querySelector<HTMLElement>('.tag')!;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+    let seed = Number(figure.dataset.seed);
+    let model: Awaited<ReturnType<typeof trainModel>> | null = null, modelW = 0;
+    let raf = 0, runId = 0, redraw = () => {};
+
+    async function run() {
       cancelAnimationFrame(raf);
-      sim = build();
-      if (reduce.matches) { sim.finish(); sim.draw(); return; }
-      const tick = () => { const more = sim!.step(); sim!.draw(); if (more) raf = requestAnimationFrame(tick); };
+      const id = ++runId;
+      const W = Math.round(simCanvas.clientWidth * SCALE), H = Math.round(simCanvas.clientHeight * SCALE);
+      const rock = makeRock(W, H, seed);
+      const sim = simulator(rock);
+      const paintSim = painter(simCanvas, rock), paintNet = painter(netCanvas, rock, false); // the network works on coarse blocks, so no meniscus line
+      score.textContent = '';
+      // Show the dry rock in both rows while the network trains.
+      redraw = () => { paintSim(sim.state); paintNet(sim.state); };
+      redraw();
+      if (!model || modelW !== W) {
+        netTag.textContent = 'Training network';
+        model = await trainModel(W, H, Number(figure.dataset.seed)); modelW = W;
+        netTag.textContent = 'Neural network';
+        if (id !== runId) return;
+      }
+      const net = rollout(rock, model);
+      redraw = () => { paintSim(sim.state); paintNet(net.state); };
+      const done = () => {
+        const s = saturation(rock, sim.state), p = saturation(rock, net.state);
+        score.textContent = `Fluid saturation: simulation ${Math.round(s * 100)}%, network ${Math.round(p * 100)}%.`;
+      };
+      if (reduce.matches) {
+        while (sim.step()) net.step();
+        redraw(); done(); return;
+      }
+      const tick = () => {
+        const more = sim.step();
+        net.step();
+        redraw();
+        if (more) raf = requestAnimationFrame(tick); else done();
+      };
       raf = requestAnimationFrame(tick);
     }
 
-    run();
-    canvas.addEventListener('click', run);
-    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => sim?.draw());
-    let w = canvas.clientWidth;
-    new ResizeObserver(() => { if (Math.abs(canvas.clientWidth - w) > 8) { w = canvas.clientWidth; run(); } }).observe(canvas);
+    // Defer the first run until after first paint so training never blocks the page.
+    requestAnimationFrame(() => setTimeout(run, 0));
+    const again = () => { seed += 1; run(); };
+    figure.querySelector('.again')!.addEventListener('click', again);
+    simCanvas.addEventListener('click', again);
+    netCanvas.addEventListener('click', again);
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => redraw());
+    new MutationObserver(() => redraw()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    let w = simCanvas.clientWidth;
+    new ResizeObserver(() => { if (Math.abs(simCanvas.clientWidth - w) > 8) { w = simCanvas.clientWidth; run(); } }).observe(simCanvas);
   }
 
-  document.querySelectorAll<HTMLCanvasElement>('canvas.core').forEach(setup);
+  document.querySelectorAll<HTMLElement>('figure.core-figure').forEach(setup);
 </script>
 
 <style>
   .core-figure { margin: 0; }
-  .core { display: block; width: 100%; border-radius: 4px; cursor: pointer; image-rendering: auto; }
+  .rows { display: grid; gap: 4px; }
+  .row { position: relative; }
+  canvas { display: block; width: 100%; height: var(--row); border-radius: 3px; cursor: pointer; background: rgb(var(--water-rgb)); }
+  .tag {
+    position: absolute;
+    top: 5px;
+    right: 6px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--paper) 86%, transparent);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 11.5px;
+    font-weight: 500;
+    pointer-events: none;
+  }
   figcaption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 14px;
     margin-top: 10px;
     font-family: var(--sans);
     font-size: 12.5px;
     line-height: 1.5;
     color: var(--slate);
-    text-wrap: pretty;
   }
-  .key { white-space: nowrap; margin-right: 14px; }
+  .key { white-space: nowrap; }
+  .text { flex: 1 1 18em; text-wrap: pretty; }
+  .score { flex-basis: 100%; color: var(--ink); font-variant-numeric: tabular-nums; min-height: 1.5em; }
   .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -0.5px; }
-  .sw.grain { background: rgb(var(--grain-rgb)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 15%, transparent); }
-  .sw.water { background: rgb(var(--water-rgb)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 12%, transparent); }
+  .sw.grain { background: rgb(var(--grain-rgb)); }
+  .sw.water { background: rgb(var(--water-rgb)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 14%, transparent); }
   .sw.fluid { background: rgb(var(--phase-rgb)); }
+  .again {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .again:hover { text-decoration: underline; text-underline-offset: 3px; }
 </style>

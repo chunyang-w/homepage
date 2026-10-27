@@ -8,6 +8,7 @@
   --accent: #2430c8;
   --phase: #2430c8;
   --paper-rgb: 255, 255, 255;
+  --ink-rgb: 22, 24, 29;
   --grain-rgb: 196, 200, 208;
   --water-rgb: 238, 240, 243;
   --phase-rgb: 36, 48, 200;
@@ -29,6 +30,7 @@
     --accent: #9aa6ff;
     --phase: #4a57e6;
     --paper-rgb: 16, 18, 22;
+    --ink-rgb: 231, 233, 238;
     --grain-rgb: 76, 81, 92;
     --water-rgb: 36, 40, 48;
     --phase-rgb: 74, 87, 230;
@@ -43,13 +45,16 @@
   --accent: #9aa6ff;
   --phase: #4a57e6;
   --paper-rgb: 16, 18, 22;
+  --ink-rgb: 231, 233, 238;
   --grain-rgb: 76, 81, 92;
   --water-rgb: 36, 40, 48;
   --phase-rgb: 74, 87, 230;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; }
+html { -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; color-scheme: light dark; }
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
 body {
   margin: 0;
   background: var(--paper);
@@ -66,8 +71,12 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; text-decoratio
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
 strong { font-weight: 600; }
 
-.page { max-width: var(--page); margin: 0 auto; padding: 72px 24px 56px; }
-@media (max-width: 640px) { .page { padding: 40px 16px 40px; } }
+.page { position: relative; max-width: var(--page); margin: 0 auto; padding: 72px 24px 56px; }
+.theme-slot { position: absolute; top: 22px; right: 24px; }
+@media (max-width: 640px) {
+  .page { padding: 64px 16px 40px; }
+  .theme-slot { top: 16px; right: 16px; }
+}
 
 /* Sections: the name hangs in the left margin like a margin note. */
 .section {
