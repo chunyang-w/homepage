@@ -6,6 +6,7 @@ venue: arXiv 2026
 date: 2026-10-07
 image: /img/pub-poreml.webp
 links:
+  - { label: Project page, url: "https://poreml.chunyang-wang.workers.dev/" }
   - { label: Paper, url: "https://arxiv.org/pdf/2610.10314" }
   - { label: Code, url: "https://github.com/PoreML" }
   - { label: Hugging Face, url: "https://huggingface.co/PoreML" }
