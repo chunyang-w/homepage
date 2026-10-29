@@ -109,6 +109,15 @@ strong { font-weight: 600; }
 .prose li::before { content: '–'; position: absolute; left: -1.2em; color: var(--slate); }
 .prose a { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .prose a:hover { color: var(--accent); text-decoration-color: currentColor; }
+/* Markdown footnotes: a small superscript number and a quiet note under the text. */
+.prose sup { font-size: 0.7em; line-height: 0; margin-left: 1px; }
+.prose sup a { text-decoration: none; color: var(--accent); font-family: var(--sans, inherit); }
+.prose .footnotes { margin-top: 1.2em; padding-top: 0.7em; border-top: 1px solid var(--rule); font-size: 0.86em; color: var(--slate); }
+.prose .footnotes ol { margin: 0; padding-left: 1.2em; }
+.prose .footnotes li::before { content: none; }
+.prose .footnotes p { margin: 0; }
+.prose .footnotes [data-footnote-backref] { text-decoration: none; margin-left: 0.25em; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* News */
 .news { list-style: none; margin: 0; padding: 0; max-width: 62ch; }
