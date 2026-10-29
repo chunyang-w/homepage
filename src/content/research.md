@@ -1,2 +1,2 @@
-- **Machine learning for science.** Neural surrogate models that accelerate scientific computation, with a focus on multiphase flow in porous media.
-- **Computational methods.** Finite element and finite difference methods for physical simulation.
+- **AI/ML for physics.** Neural surrogate models that learn physical systems from data, with an emphasis on fluid dynamics.
+- **Computational methods.** Lattice Boltzmann methods for modelling multiphase flow, finite element methods and mesh adaptation.
