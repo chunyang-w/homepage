@@ -1,6 +1,7 @@
 ---
 import { site } from '../data/site';
 import CoreSample from './CoreSample.astro';
+import Icon from './Icon.astro';
 const ext = (href: string) => (href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {});
 const [field, topic] = site.tagline;
 ---
@@ -10,8 +11,7 @@ const [field, topic] = site.tagline;
     <p class="statement"><span class="field">{field}</span><span class="topic">{topic}</span></p>
     <p class="role">{site.position}, <a href={site.affiliationUrl} {...ext(site.affiliationUrl)}>{site.affiliation}</a></p>
     <nav class="links" aria-label="Profiles">
-      <a href={`mailto:${site.email}`}>Email</a>
-      {site.links.map((l) => <a href={l.href} {...ext(l.href)}>{l.label}</a>)}
+      {site.links.map((l) => <a href={l.href} {...ext(l.href)}><Icon name={l.icon} /><span>{l.label}</span></a>)}
     </nav>
   </div>
   <img class="portrait" src={site.avatar} alt={`Portrait of ${site.name}`} width="136" height="176" />
@@ -58,6 +58,9 @@ const [field, topic] = site.tagline;
   .role a { color: inherit; }
   .role a:hover { color: var(--accent); }
   .links { display: flex; flex-wrap: wrap; gap: 6px 22px; font-family: var(--sans); font-size: 14px; font-weight: 500; }
+  .links a { display: inline-flex; align-items: center; gap: 6px; }
+  .links a :global(.icon) { color: var(--slate); transition: color 0.15s; }
+  .links a:hover :global(.icon), .links a:focus-visible :global(.icon) { color: currentColor; }
   .portrait {
     width: 136px; height: 176px; object-fit: cover; object-position: 50% 20%;
     border-radius: 4px;

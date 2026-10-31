@@ -12,10 +12,12 @@ export const site = {
   email: 'chunyang.w@outlook.com',
   description: "Chunyang Wang, Ph.D. student at Imperial College London working on AI for physics and multiphase flow in porous media.",
   avatar: '/img/avatar.webp',
+  // Shown in this order in the header. `icon` names a shape in components/Icon.astro.
   links: [
-    { label: 'CV', href: '/files/cv.pdf' },
-    { label: 'Google Scholar', href: scholarUrl },
-    { label: 'GitHub', href: 'https://github.com/chunyang-w' },
-    { label: 'LinkedIn', href: 'https://www.linkedin.com/in/chunyang-wang-83135b201/' },
-  ],
+    { label: 'Google Scholar', href: scholarUrl, icon: 'scholar' },
+    { label: 'GitHub', href: 'https://github.com/chunyang-w', icon: 'github' },
+    { label: 'LinkedIn', href: 'https://www.linkedin.com/in/chunyang-wang-83135b201/', icon: 'linkedin' },
+    { label: 'CV', href: '/files/cv.pdf', icon: 'cv' },
+    { label: 'Email', href: 'mailto:chunyang.w@outlook.com', icon: 'email' },
+  ] as const,
 };
