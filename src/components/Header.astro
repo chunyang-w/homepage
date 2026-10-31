@@ -58,9 +58,9 @@ const [field, topic] = site.tagline;
   .role a { color: inherit; }
   .role a:hover { color: var(--accent); }
   .links { display: flex; flex-wrap: wrap; gap: 6px 22px; font-family: var(--sans); font-size: 14px; font-weight: 500; }
-  .links a { display: inline-flex; align-items: center; gap: 6px; }
-  .links a :global(.icon) { color: var(--slate); transition: color 0.15s; }
-  .links a:hover :global(.icon), .links a:focus-visible :global(.icon) { color: currentColor; }
+  .links a { display: inline-flex; align-items: center; gap: 7px; }
+  /* Icons take the link's own colour, so icon and label always match, hover included. */
+  .links a :global(.icon) { width: 18px; height: 18px; color: currentColor; }
   .portrait {
     width: 136px; height: 176px; object-fit: cover; object-position: 50% 20%;
     border-radius: 4px;
