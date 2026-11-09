@@ -14,6 +14,7 @@ const publications = defineCollection({
     image: z.string().optional(),
     links: z.array(z.object({ label: z.string(), url: z.string() })).default([]),
     highlight: z.string().optional(),
+    highlightUrl: z.string().url().optional(), // makes the highlight a link
   }),
 });
 

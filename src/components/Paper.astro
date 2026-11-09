@@ -13,10 +13,11 @@ export interface Props {
   links?: PaperLink[]; // "Paper", "arXiv", "Code", "Hugging Face", ...
   image?: string;
   highlight?: string; // "Spotlight Presentation", "Oral", ...
+  highlightUrl?: string; // makes the highlight a link, e.g. to a workshop version
   me?: string; // author name to highlight
 }
 
-const { title, url, authors, venue, venueUrl = url, links = [], image, highlight, me = site.name } = Astro.props;
+const { title, url, authors, venue, venueUrl = url, links = [], image, highlight, highlightUrl, me = site.name } = Astro.props;
 const ext = (href: string) => (href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {});
 ---
 <li class="paper">
@@ -44,7 +45,11 @@ const ext = (href: string) => (href.startsWith('http') ? { target: '_blank', rel
         </Fragment>
       ))}
     </div>
-    {highlight && <div class="highlight">{highlight}</div>}
+    {highlight && (
+      <div class="highlight">
+        {highlightUrl ? <a href={highlightUrl} {...ext(highlightUrl)}>{highlight}</a> : highlight}
+      </div>
+    )}
   </div>
 </li>
 
@@ -78,4 +83,5 @@ const ext = (href: string) => (href.startsWith('http') ? { target: '_blank', rel
   .venue:hover { color: var(--accent); }
   .sep { color: var(--grain); margin: 0 7px; }
   .highlight { margin-top: 6px; color: var(--accent); font-style: italic; font-size: 15px; }
+  .highlight a { color: inherit; }
 </style>
