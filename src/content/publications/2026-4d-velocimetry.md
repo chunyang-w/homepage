@@ -5,7 +5,7 @@ authors: [Chunyang Wang, Linqi Zhu, Yuxuan Gu, Robert van der Merwe, Xin Ju, Cat
 venue: Advances in Water Resources 2026
 date: 2026-03-12
 image: /img/pub-4d.webp
-highlight: Concise version presented at the ICML 2026 AI4Physics Workshop
+highlight: Short version presented at the ICML 2026 AI4Physics Workshop
 highlightUrl: https://icml.cc/virtual/2026/72568
 links:
   - { label: Paper, url: "https://arxiv.org/pdf/2603.12516" }
